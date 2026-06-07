@@ -1,6 +1,6 @@
 {
   "name": "@tracegate/core",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Core contracts, schemas, and policy primitives for TraceGate.",
   "type": "module",
   "license": "MIT",

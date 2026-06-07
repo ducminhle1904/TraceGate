@@ -1,6 +1,6 @@
 {
   "name": "@tracegate/adapters",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Framework adapters and observability exports for TraceGate.",
   "type": "module",
   "license": "MIT",
