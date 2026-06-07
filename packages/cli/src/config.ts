@@ -15,11 +15,13 @@ export interface TraceGateRunnerResult {
 
 export interface TraceGateConfig {
   matrix: MatrixCase[];
+  concurrency?: number;
   runCase(input: TraceGateRunCaseInput): Promise<TraceGateRunnerResult> | TraceGateRunnerResult;
 }
 
 export function defineTraceGateConfig(config: {
   matrix: readonly MatrixCaseInput[];
+  concurrency?: number;
   runCase(input: TraceGateRunCaseInput): Promise<TraceGateRunnerResult> | TraceGateRunnerResult;
 }): TraceGateConfig {
   return normalizeTraceGateConfig(config);
@@ -31,6 +33,7 @@ export function normalizeTraceGateConfig(value: unknown): TraceGateConfig {
   }
 
   const candidate = value as {
+    concurrency?: unknown;
     matrix?: unknown;
     runCase?: unknown;
   };
@@ -39,8 +42,23 @@ export function normalizeTraceGateConfig(value: unknown): TraceGateConfig {
     throw new Error("TraceGate config must define a runCase function.");
   }
 
+  const concurrency = normalizeConcurrency(candidate.concurrency);
+
   return {
     matrix: defineMatrix(candidate.matrix as readonly MatrixCaseInput[]),
+    ...(concurrency ? { concurrency } : {}),
     runCase: candidate.runCase as TraceGateConfig["runCase"],
   };
+}
+
+function normalizeConcurrency(value: unknown): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new Error("TraceGate config concurrency must be an integer greater than or equal to 1.");
+  }
+
+  return value;
 }

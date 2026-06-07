@@ -6,6 +6,26 @@ export type { PolicyVerdict, PolicyVerdictStatus } from "./policy/verdict.js";
 export { PolicyVerdictSchema, PolicyVerdictStatusSchema } from "./policy/verdict.js";
 export type { RedactValueOptions } from "./redaction/redact.js";
 export { redactValue } from "./redaction/redact.js";
+export type {
+  ReplayComparisonResult,
+  ReplayExpectation,
+  ReplayFixture,
+  ReplayFixtureInput,
+  ReplaySource,
+  ReplayTraceSummary,
+  TraceJsonlChunk,
+} from "./replay/replay-fixture.js";
+export {
+  compareReplayExpectation,
+  createReplayExpectation,
+  defineReplayFixture,
+  parseTraceJsonl,
+  parseTraceJsonlStream,
+  ReplayExpectationSchema,
+  ReplayFixtureSchema,
+  ReplayTraceSummarySchema,
+  summarizeReplaySource,
+} from "./replay/replay-fixture.js";
 export type { TraceGateRuntimeErrorDetails } from "./runtime/errors.js";
 export {
   TraceGateInputValidationError,
@@ -24,10 +44,21 @@ export type {
   WrappedTool,
 } from "./runtime/harness.js";
 export { createHarness } from "./runtime/harness.js";
-export type { MemoryTraceSink, TraceEvent, TraceSink } from "./runtime/trace-sink.js";
+export type {
+  EvidenceTraceEvent,
+  MemoryTraceSink,
+  RunTraceEvent,
+  ToolTraceEvent,
+  TraceEvent,
+  TraceSink,
+} from "./runtime/trace-sink.js";
 export {
   createJsonlFileTraceSink,
   createMemoryTraceSink,
+  EvidenceTraceEventSchema,
+  RunTraceEventSchema,
+  ToolTraceEventSchema,
+  TraceEventSchema,
 } from "./runtime/trace-sink.js";
 export type { JsonObject, JsonValue } from "./schema/json.js";
 export { JsonObjectSchema, JsonValueSchema } from "./schema/json.js";

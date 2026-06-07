@@ -7,6 +7,7 @@ import { defineMatrix } from "@tracegate/core";
 import { defineTraceGateConfig } from "@tracegate/cli/config";
 
 export default defineTraceGateConfig({
+  concurrency: 2,
   matrix: defineMatrix([
     {
       id: "blocks-email-without-approval",
@@ -30,6 +31,7 @@ export default defineTraceGateConfig({
 ## Config Fields
 
 - `matrix`: array of core `MatrixCase` objects.
+- `concurrency`: optional max number of matrix cases to run at once; defaults to `1`.
 - `runCase(input)`: project-owned runner for one case.
 - `runCase` must return `events` or `run`; `output` is optional.
 
@@ -47,5 +49,7 @@ export default defineTraceGateConfig({
 ## Reports
 
 `tracegate test --json` writes a report with `version`, `status`, timestamps, counts, and per-case results.
+
+`tracegate test --concurrency <n>` overrides config concurrency for local or CI runs. Results are reported in matrix order.
 
 `tracegate test --junit <path>` writes a JUnit XML report for CI.

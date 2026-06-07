@@ -58,13 +58,16 @@ await sendEmail({
 
 ## 60-Second Quickstart
 
-Phase 3 provides core runtime wrappers plus the first matrix-test CLI.
+Phase 4 provides core runtime wrappers, matrix testing, JSONL trace capture, and replay fixtures.
 
 ```bash
 pnpm add @tracegate/core
 pnpm add -D @tracegate/cli
 tracegate init
 tracegate test
+tracegate test --concurrency 2
+tracegate fixtures create trace.jsonl --out fixtures/example.ts
+tracegate replay fixtures/example.ts
 ```
 
 For local development:
@@ -85,6 +88,7 @@ pnpm test
 - [Core contracts reference](docs/reference/core-contracts.md)
 - [Matrix file reference](docs/reference/matrix-file.md)
 - [Trace schema reference](docs/reference/trace-schema.md)
+- [Replay fixtures reference](docs/reference/replay-fixtures.md)
 - [Runtime semantics](docs/reference/runtime-semantics.md)
 - [Configuration reference](docs/reference/configuration.md)
 - [Observability integrations](docs/integrations/observability.md)

@@ -14,8 +14,9 @@ pnpm test
 ## Agent Checks
 
 ```bash
-tracegate test --json
-tracegate test --junit tracegate-junit.xml
+pnpm exec tracegate test --json
+pnpm exec tracegate test --junit tracegate-junit.xml
+pnpm exec tracegate replay fixtures/blocked-email.ts --junit tracegate-replay.xml
 ```
 
 ## GitHub Actions Example
@@ -39,7 +40,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm tracegate test --junit tracegate-junit.xml
+      - run: pnpm exec tracegate test --junit tracegate-junit.xml
+      - run: pnpm exec tracegate replay fixtures/blocked-email.ts --junit tracegate-replay.xml
 ```
 
 ## CI Goals
@@ -48,8 +50,8 @@ jobs:
 - Fail when required evidence is missing.
 - Fail when policy verdicts drift.
 - Fail when traces leak configured secrets.
+- Fail when replayed tool behavior, evidence, run status, or output shape drifts.
 
 ## Next-Phase TODOs
 
-- Show how production traces become regression cases after Phase 4.
 - Add hosted CI artifact examples.

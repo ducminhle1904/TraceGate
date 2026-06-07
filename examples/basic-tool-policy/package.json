@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:matrix": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js test --json"
+    "test:matrix": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js test --json",
+    "test:replay": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js replay fixtures/blocked-email.ts --json"
   },
   "dependencies": {
     "@tracegate/core": "workspace:*",

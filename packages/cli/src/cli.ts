@@ -5,8 +5,9 @@ import { parseArgs } from "node:util";
 import type { MatrixCase } from "@tracegate/core";
 
 import { evaluateMatrixAssertions } from "./assertions.js";
-import type { TraceGateRunnerResult } from "./config.js";
+import type { TraceGateConfig, TraceGateRunnerResult } from "./config.js";
 import { DEFAULT_CONFIG_FILE, loadTraceGateConfig } from "./config-loader.js";
+import { runFixturesCommand, runReplayCommand } from "./replay-command.js";
 import {
   createMatrixReport,
   formatConsoleReport,
@@ -35,6 +36,10 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return await runTest(args, io);
       case "doctor":
         return await runDoctor(args, io);
+      case "fixtures":
+        return await runFixturesCommand(args, io);
+      case "replay":
+        return await runReplayCommand(args, io);
       case "--help":
       case "-h":
       case "help":
@@ -81,6 +86,7 @@ async function runTest(args: string[], io: CliIo): Promise<number> {
     options: {
       case: { type: "string" },
       config: { type: "string", short: "c" },
+      concurrency: { type: "string" },
       json: { type: "boolean" },
       junit: { type: "string" },
       policy: { type: "boolean" },
@@ -88,12 +94,14 @@ async function runTest(args: string[], io: CliIo): Promise<number> {
   });
   const caseId = readOptionalString(values.case, "--case");
   const configPath = readOptionalString(values.config, "--config");
+  const cliConcurrency = parseConcurrency(readOptionalString(values.concurrency, "--concurrency"));
   const junitPath = readOptionalString(values.junit, "--junit");
   const startedAt = now(io);
   const { config } = await loadTraceGateConfig({
     cwd: io.cwd,
     ...(configPath ? { configPath } : {}),
   });
+  const concurrency = cliConcurrency ?? config.concurrency ?? 1;
   const cases = filterCases(config.matrix, {
     policyOnly: values.policy === true,
     ...(caseId ? { caseId } : {}),
@@ -104,39 +112,7 @@ async function runTest(args: string[], io: CliIo): Promise<number> {
     return 1;
   }
 
-  const results: MatrixCaseResult[] = [];
-  for (const [index, matrixCase] of cases.entries()) {
-    const caseStartedAt = now(io);
-    const failures: string[] = [];
-    let result: TraceGateRunnerResult | undefined;
-    let runId: string | undefined;
-    let traceEventCount = 0;
-
-    try {
-      result = await config.runCase({ case: matrixCase, index });
-      if (!result || (!result.events && !result.run)) {
-        failures.push("runCase must return at least events or run.");
-      } else {
-        const assertionResult = evaluateMatrixAssertions({ case: matrixCase, result });
-        failures.push(...assertionResult.failures);
-        runId = assertionResult.runId;
-        traceEventCount = assertionResult.traceEventCount;
-      }
-    } catch (error) {
-      failures.push(`runCase threw: ${error instanceof Error ? error.message : String(error)}`);
-    }
-
-    const outputSummary = summarizeOutput(result?.output);
-    results.push({
-      id: matrixCase.id,
-      status: failures.length > 0 ? "failed" : "passed",
-      durationMs: now(io).getTime() - caseStartedAt.getTime(),
-      failures,
-      traceEventCount,
-      ...(outputSummary ? { outputSummary } : {}),
-      ...(runId ? { runId } : {}),
-    });
-  }
+  const results = await runMatrixCases({ cases, concurrency, config, io });
 
   const report = createMatrixReport({
     startedAt,
@@ -231,6 +207,83 @@ function readOptionalString(value: string | undefined, name: string): string | u
   return value;
 }
 
+function parseConcurrency(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error("--concurrency must be an integer greater than or equal to 1.");
+  }
+
+  return parsed;
+}
+
+async function runMatrixCases(input: {
+  cases: MatrixCase[];
+  concurrency: number;
+  config: TraceGateConfig;
+  io: CliIo;
+}): Promise<MatrixCaseResult[]> {
+  const results = new Array<MatrixCaseResult>(input.cases.length);
+  let cursor = 0;
+  const workerCount = Math.min(input.concurrency, input.cases.length);
+
+  const runNext = async (): Promise<void> => {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      const matrixCase = input.cases[index];
+      if (!matrixCase) {
+        return;
+      }
+      results[index] = await runMatrixCase(input.config, matrixCase, index, input.io);
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, runNext));
+  return results;
+}
+
+async function runMatrixCase(
+  config: TraceGateConfig,
+  matrixCase: MatrixCase,
+  index: number,
+  io: CliIo,
+): Promise<MatrixCaseResult> {
+  const caseStartedAt = now(io);
+  const failures: string[] = [];
+  let result: TraceGateRunnerResult | undefined;
+  let runId: string | undefined;
+  let traceEventCount = 0;
+
+  try {
+    result = await config.runCase({ case: matrixCase, index });
+    if (!result || (!result.events && !result.run)) {
+      failures.push("runCase must return at least events or run.");
+    } else {
+      const assertionResult = evaluateMatrixAssertions({ case: matrixCase, result });
+      failures.push(...assertionResult.failures);
+      runId = assertionResult.runId;
+      traceEventCount = assertionResult.traceEventCount;
+    }
+  } catch (error) {
+    failures.push(`runCase threw: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const outputSummary = summarizeOutput(result?.output);
+  return {
+    id: matrixCase.id,
+    status: failures.length > 0 ? "failed" : "passed",
+    durationMs: now(io).getTime() - caseStartedAt.getTime(),
+    failures,
+    traceEventCount,
+    ...(outputSummary ? { outputSummary } : {}),
+    ...(runId ? { runId } : {}),
+  };
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -258,7 +311,9 @@ function helpText(): string {
     "",
     "Commands:",
     "  tracegate init [--config tracegate.config.ts]",
-    "  tracegate test [--case id] [--policy] [--json] [--junit path] [--config path]",
+    "  tracegate test [--case id] [--policy] [--concurrency n] [--json] [--junit path] [--config path]",
+    "  tracegate fixtures create <trace.jsonl> --out <fixture.ts> [--case id] [--config path] [--force]",
+    "  tracegate replay <fixture.ts> [--config path] [--json] [--junit path] [--update]",
     "  tracegate doctor [--config path]",
     "",
   ].join("\n");

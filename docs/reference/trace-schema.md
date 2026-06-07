@@ -2,6 +2,38 @@
 
 TraceGate traces are designed to be JSONL-friendly. Each row should be a plain JSON object that can be snapshot-tested, exported, or replayed later.
 
+Phase 4 replay reads ordered `TraceEvent` rows, not bare tool records. A replay-compatible JSONL file should contain one event wrapper per line.
+
+## Trace Event Row
+
+```json
+{
+  "sequence": 1,
+  "type": "tool.blocked",
+  "timestamp": "2026-06-07T00:00:00.000Z",
+  "runId": "run-1",
+  "record": {
+    "id": "call-1",
+    "runId": "run-1",
+    "toolName": "sendEmail",
+    "timestamp": "2026-06-07T00:00:00.000Z",
+    "status": "blocked",
+    "riskTier": "high",
+    "input": {
+      "to": "customer@example.com"
+    },
+    "policyVerdict": {
+      "status": "review",
+      "reasons": ["Tool requires approval."],
+      "riskTier": "high",
+      "toolName": "sendEmail"
+    }
+  }
+}
+```
+
+Replay normalization ignores timestamps, generated ids, and durations. It compares stable behavior summaries: started-tool order, tool statuses, policy verdicts, evidence ids/types, optional run status, output keys, and trace event count.
+
 ## Tool Call Row
 
 ```json

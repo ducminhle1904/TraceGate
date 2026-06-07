@@ -17,12 +17,7 @@ export async function loadTraceGateConfig(input: {
 }): Promise<LoadedTraceGateConfig> {
   const configPath = resolve(input.cwd, input.configPath ?? DEFAULT_CONFIG_FILE);
   await access(configPath);
-
-  const jiti = createJiti(import.meta.url, {
-    interopDefault: true,
-    moduleCache: false,
-  });
-  const loaded = await jiti.import<unknown>(configPath, { default: true });
+  const loaded = await loadTypeScriptModule(configPath);
 
   return {
     path: configPath,
@@ -30,7 +25,15 @@ export async function loadTraceGateConfig(input: {
   };
 }
 
-function unwrapDefault(value: unknown): unknown {
+export async function loadTypeScriptModule(path: string): Promise<unknown> {
+  const jiti = createJiti(import.meta.url, {
+    interopDefault: true,
+    moduleCache: false,
+  });
+  return jiti.import<unknown>(path, { default: true });
+}
+
+export function unwrapDefault(value: unknown): unknown {
   if (typeof value === "object" && value !== null && "default" in value) {
     return (value as { default: unknown }).default;
   }

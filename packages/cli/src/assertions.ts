@@ -3,6 +3,7 @@ import type {
   JsonObject,
   MatrixCase,
   PolicyVerdictStatus,
+  RunTraceEvent,
   ToolCallRecord,
   TraceEvent,
 } from "@tracegate/core";
@@ -107,7 +108,7 @@ function collectActualRecords(result: TraceGateRunnerResult): ActualRecords {
   const events = result.events ?? [];
   const toolEvents = events.filter(isToolEvent);
   const evidenceEvents = events.filter(isEvidenceEvent);
-  const run = result.run ?? events.find(isRunEvent)?.run;
+  const run = result.run ?? events.filter(isRunFinishedEvent).at(-1)?.run;
   const toolRecords = run?.toolCalls ?? toolEvents.map((event) => event.record);
   const evidenceRecords = run?.evidence ?? evidenceEvents.map((event) => event.record);
   const runId = run?.id ?? events[0]?.runId;
@@ -116,7 +117,9 @@ function collectActualRecords(result: TraceGateRunnerResult): ActualRecords {
       ? toolEvents
           .filter((event) => event.type === "tool.started")
           .map((event) => event.record.toolName)
-      : toolRecords.map((record) => record.toolName);
+      : toolRecords
+          .filter((record) => record.status === "started")
+          .map((record) => record.toolName);
 
   return {
     toolRecords,
@@ -225,8 +228,6 @@ function isEvidenceEvent(
   return event.type === "evidence.recorded";
 }
 
-function isRunEvent(
-  event: TraceEvent,
-): event is Extract<TraceEvent, { type: "run.started" | "run.finished" }> {
-  return event.type === "run.started" || event.type === "run.finished";
+function isRunFinishedEvent(event: TraceEvent): event is RunTraceEvent {
+  return event.type === "run.finished";
 }

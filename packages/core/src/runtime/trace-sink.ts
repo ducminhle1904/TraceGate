@@ -1,8 +1,15 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import type { EvidenceRecord } from "../evidence/evidence.js";
-import type { ToolCallRecord, TraceGateRun } from "../schema/trace.js";
+import { z } from "zod";
+
+import { type EvidenceRecord, EvidenceRecordSchema } from "../evidence/evidence.js";
+import {
+  type ToolCallRecord,
+  ToolCallRecordSchema,
+  type TraceGateRun,
+  TraceGateRunSchema,
+} from "../schema/trace.js";
 
 export interface RunTraceEvent {
   sequence: number;
@@ -29,6 +36,42 @@ export interface EvidenceTraceEvent {
 }
 
 export type TraceEvent = RunTraceEvent | ToolTraceEvent | EvidenceTraceEvent;
+
+export const RunTraceEventSchema = z
+  .object({
+    sequence: z.number().int().nonnegative(),
+    type: z.enum(["run.started", "run.finished"]),
+    timestamp: z.string().datetime(),
+    runId: z.string().min(1),
+    run: TraceGateRunSchema,
+  })
+  .strict();
+
+export const ToolTraceEventSchema = z
+  .object({
+    sequence: z.number().int().nonnegative(),
+    type: z.enum(["tool.started", "tool.succeeded", "tool.failed", "tool.blocked"]),
+    timestamp: z.string().datetime(),
+    runId: z.string().min(1),
+    record: ToolCallRecordSchema,
+  })
+  .strict();
+
+export const EvidenceTraceEventSchema = z
+  .object({
+    sequence: z.number().int().nonnegative(),
+    type: z.literal("evidence.recorded"),
+    timestamp: z.string().datetime(),
+    runId: z.string().min(1),
+    record: EvidenceRecordSchema,
+  })
+  .strict();
+
+export const TraceEventSchema = z.discriminatedUnion("type", [
+  RunTraceEventSchema,
+  ToolTraceEventSchema,
+  EvidenceTraceEventSchema,
+]);
 
 export type TraceEventInput =
   | Omit<RunTraceEvent, "sequence">
