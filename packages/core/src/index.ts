@@ -2,10 +2,21 @@ export type { EvidenceRecord, EvidenceRecordInput, EvidenceType } from "./eviden
 export { EvidenceRecordSchema, EvidenceTypeSchema } from "./evidence/evidence.js";
 export type { ApprovalState, EvaluatePolicyInput } from "./policy/evaluate-policy.js";
 export { ApprovalStateSchema, evaluatePolicy } from "./policy/evaluate-policy.js";
+export type { PolicyConfig } from "./policy/policy-config.js";
+export {
+  createPolicyEvaluator,
+  definePolicy,
+  PolicyConfigSchema,
+} from "./policy/policy-config.js";
 export type { PolicyVerdict, PolicyVerdictStatus } from "./policy/verdict.js";
 export { PolicyVerdictSchema, PolicyVerdictStatusSchema } from "./policy/verdict.js";
-export type { RedactValueOptions } from "./redaction/redact.js";
-export { redactValue } from "./redaction/redact.js";
+export type { RedactValueOptions, SecretLeakFinding, SecretLeakKind } from "./redaction/redact.js";
+export {
+  assertNoSecretLikeValues,
+  detectSecretLikeValues,
+  redactValue,
+  TraceGateSecretLeakError,
+} from "./redaction/redact.js";
 export type {
   ReplayComparisonResult,
   ReplayExpectation,

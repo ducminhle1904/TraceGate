@@ -9,6 +9,8 @@ import {
   createHarness,
   createJsonlFileTraceSink,
   createMemoryTraceSink,
+  createPolicyEvaluator,
+  definePolicy,
   defineToolContract,
   type TraceEvent,
   TraceGateInputValidationError,
@@ -149,6 +151,91 @@ describe("createHarness runtime", () => {
     );
 
     expect(executed).toBe(false);
+  });
+
+  it("blocks configured risk tiers before execution", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({
+      traceSink,
+      policyEvaluator: createPolicyEvaluator(definePolicy({ blockRiskTiers: ["high"] })),
+    });
+    let executed = false;
+    const refund = harness.wrapTool(refundContract, () => {
+      executed = true;
+    });
+
+    await expect(refund({ orderId: "order-1", amount: 10 })).rejects.toBeInstanceOf(
+      TraceGatePolicyBlockedError,
+    );
+
+    expect(executed).toBe(false);
+    expect(traceSink.events.at(-1)).toMatchObject({
+      type: "tool.blocked",
+      record: {
+        policyVerdict: {
+          status: "block",
+        },
+      },
+    });
+  });
+
+  it("requires approval by risk tier even when a high-risk alias omits contract approval", async () => {
+    const traceSink = createMemoryTraceSink();
+    const highRiskAlias = defineToolContract({
+      name: "emailAlias",
+      riskTier: "high",
+      inputSchema: z.object({ body: z.string() }),
+    });
+    const harness = createHarness({
+      traceSink,
+      policyEvaluator: createPolicyEvaluator(
+        definePolicy({ requireApprovalForRiskTiers: ["high"] }),
+      ),
+    });
+    let executed = false;
+    const alias = harness.wrapTool(highRiskAlias, () => {
+      executed = true;
+    });
+
+    await expect(alias({ body: "send refund email" })).rejects.toBeInstanceOf(
+      TraceGateReviewRequiredError,
+    );
+
+    expect(executed).toBe(false);
+  });
+
+  it("requires configured evidence before an approved high-risk tool executes", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({
+      traceSink,
+      approvalHandler: () => "approved",
+      policyEvaluator: createPolicyEvaluator(
+        definePolicy({
+          requireApprovalForRiskTiers: ["high"],
+          requiredEvidence: {
+            issueRefund: ["manager"],
+          },
+        }),
+      ),
+    });
+    let executed = false;
+    const refund = harness.wrapTool(refundContract, () => {
+      executed = true;
+    });
+
+    await expect(refund({ orderId: "order-1", amount: 10 })).rejects.toBeInstanceOf(
+      TraceGateReviewRequiredError,
+    );
+    expect(executed).toBe(false);
+
+    await harness.recordEvidence({
+      id: "approval-1",
+      type: "user-approval",
+      timestamp: "2026-06-07T00:00:00.000Z",
+      content: { approvedBy: "manager" },
+    });
+
+    await expect(refund({ orderId: "order-1", amount: 10 })).resolves.toBeUndefined();
   });
 
   it("traces thrown tool errors and preserves the original cause", async () => {
@@ -382,6 +469,76 @@ describe("createHarness runtime", () => {
         output: {
           apiKey: "[REDACTED]",
           ok: true,
+        },
+      },
+    });
+  });
+
+  it("redacts secret-like values in trace input and output fields", async () => {
+    const traceSink = createMemoryTraceSink();
+    const contract = defineToolContract({
+      name: "sendToken",
+      riskTier: "low",
+      inputSchema: z.object({
+        note: z.string(),
+      }),
+    });
+    const harness = createHarness({ traceSink });
+    const sendToken = harness.wrapTool(contract, async () => ({
+      message: "Bearer abcdefghijklmnopqrstuvwxyz",
+    }));
+
+    await sendToken({ note: "Bearer abcdefghijklmnopqrstuvwxyz" });
+
+    expect(traceSink.events.at(1)).toMatchObject({
+      record: {
+        input: {
+          note: "[REDACTED]",
+        },
+      },
+    });
+    expect(traceSink.events.at(2)).toMatchObject({
+      record: {
+        output: {
+          message: "[REDACTED]",
+        },
+      },
+    });
+  });
+
+  it("records a policy snapshot before tool input is mutated by execution", async () => {
+    const traceSink = createMemoryTraceSink();
+    const contract = defineToolContract({
+      name: "mutateInput",
+      riskTier: "low",
+      inputSchema: z.object({
+        value: z.string(),
+      }),
+    });
+    const harness = createHarness({ traceSink });
+    const mutateInput = harness.wrapTool(contract, async (input) => {
+      input.value = "mutated";
+      return { value: input.value };
+    });
+
+    await mutateInput({ value: "original" });
+
+    expect(traceSink.events.at(1)).toMatchObject({
+      type: "tool.started",
+      record: {
+        input: {
+          value: "original",
+        },
+      },
+    });
+    expect(traceSink.events.at(2)).toMatchObject({
+      type: "tool.succeeded",
+      record: {
+        input: {
+          value: "original",
+        },
+        output: {
+          value: "mutated",
         },
       },
     });

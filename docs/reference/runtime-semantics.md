@@ -71,3 +71,11 @@ interface TraceSink {
 ```
 
 The memory sink is useful for tests. The JSONL file sink is intended for local development traces and writes parseable JSON lines.
+
+## Policy Inputs
+
+Custom policy evaluators receive the tool contract, parsed input, current run context, environment, current evidence records, and approval state. This lets `createPolicyEvaluator(definePolicy(...))` require approvals by risk tier and require evidence before side-effecting tools execute.
+
+## Redaction Defaults
+
+TraceGate redacts configured keys and common secret-like string values before writing trace events. Redaction is a deterministic guardrail for common leaks, not a complete DLP system.

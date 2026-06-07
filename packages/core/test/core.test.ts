@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  assertNoSecretLikeValues,
   compareReplayExpectation,
+  createPolicyEvaluator,
   createReplayExpectation,
   defineMatrix,
+  definePolicy,
   defineReplayFixture,
   defineToolContract,
+  detectSecretLikeValues,
   EvidenceRecordSchema,
   evaluatePolicy,
   MatrixCaseSchema,
@@ -15,6 +19,7 @@ import {
   redactValue,
   ToolCallRecordSchema,
   TraceGateRunSchema,
+  TraceGateSecretLeakError,
 } from "../src/index.js";
 
 const EmailInputSchema = z.object({
@@ -127,6 +132,147 @@ describe("evaluatePolicy", () => {
   });
 });
 
+describe("policy configuration", () => {
+  const refundContract = defineToolContract({
+    name: "issueRefund",
+    riskTier: "high",
+    inputSchema: z.object({ orderId: z.string(), amount: z.number().positive() }),
+  });
+
+  it("requires approval for configured risk tiers", () => {
+    const evaluator = createPolicyEvaluator(
+      definePolicy({ requireApprovalForRiskTiers: ["high", "critical"] }),
+    );
+
+    expect(evaluator({ contract: refundContract })).toMatchObject({ status: "review" });
+    expect(evaluator({ contract: refundContract, approval: "approved" })).toMatchObject({
+      status: "allow",
+    });
+  });
+
+  it("lets tool overrides beat environment and base policy", () => {
+    const evaluator = createPolicyEvaluator(
+      definePolicy({
+        requireApprovalForRiskTiers: ["high"],
+        environmentOverrides: {
+          production: {
+            blockRiskTiers: ["high"],
+          },
+        },
+        toolOverrides: {
+          issueRefund: {
+            requireApprovalForRiskTiers: ["high"],
+            blockRiskTiers: [],
+          },
+        },
+      }),
+    );
+
+    expect(
+      evaluator({
+        contract: refundContract,
+        approval: "approved",
+        environment: "production",
+      }),
+    ).toMatchObject({ status: "allow" });
+  });
+
+  it("rejects mistyped environment override names", () => {
+    expect(() =>
+      definePolicy({
+        environmentOverrides: {
+          prodution: {
+            blockRiskTiers: ["critical"],
+          },
+        } as never,
+      }),
+    ).toThrow();
+  });
+
+  it("blocks denied approval regardless of risk tier", () => {
+    const evaluator = createPolicyEvaluator(definePolicy({}));
+    const readContract = defineToolContract({
+      name: "lookupOrder",
+      riskTier: "read",
+      inputSchema: z.object({ orderId: z.string() }),
+    });
+
+    expect(evaluator({ contract: readContract, approval: "denied" })).toMatchObject({
+      status: "block",
+    });
+  });
+
+  it("reviews missing evidence and allows approved calls with evidence", () => {
+    const evaluator = createPolicyEvaluator(
+      definePolicy({
+        requireApprovalForRiskTiers: ["high"],
+        requiredEvidence: {
+          issueRefund: ["manager"],
+        },
+      }),
+    );
+    const evidence = [
+      EvidenceRecordSchema.parse({
+        id: "approval-1",
+        type: "user-approval",
+        timestamp: "2026-06-07T00:00:00.000Z",
+        content: { approvedBy: "manager" },
+      }),
+    ];
+
+    expect(evaluator({ contract: refundContract, approval: "approved" })).toMatchObject({
+      status: "review",
+    });
+    expect(evaluator({ contract: refundContract, approval: "approved", evidence })).toMatchObject({
+      status: "allow",
+    });
+  });
+
+  it("adds required evidence across base and environment policies", () => {
+    const evaluator = createPolicyEvaluator(
+      definePolicy({
+        requiredEvidence: {
+          issueRefund: ["audit"],
+        },
+        environmentOverrides: {
+          production: {
+            requiredEvidence: {
+              issueRefund: ["manager"],
+            },
+          },
+        },
+      }),
+    );
+    const auditEvidence = EvidenceRecordSchema.parse({
+      id: "audit-1",
+      type: "system",
+      timestamp: "2026-06-07T00:00:00.000Z",
+      content: { type: "audit" },
+    });
+    const managerEvidence = EvidenceRecordSchema.parse({
+      id: "approval-1",
+      type: "user-approval",
+      timestamp: "2026-06-07T00:00:00.000Z",
+      content: { approvedBy: "manager" },
+    });
+
+    expect(
+      evaluator({
+        contract: refundContract,
+        environment: "production",
+        evidence: [auditEvidence],
+      }),
+    ).toMatchObject({ status: "review" });
+    expect(
+      evaluator({
+        contract: refundContract,
+        environment: "production",
+        evidence: [auditEvidence, managerEvidence],
+      }),
+    ).toMatchObject({ status: "allow" });
+  });
+});
+
 describe("trace, evidence, and matrix schemas", () => {
   const timestamp = "2026-06-07T00:00:00.000Z";
 
@@ -230,6 +376,70 @@ describe("redactValue", () => {
         customerEmail: "[REDACTED]",
       },
     });
+  });
+
+  it("redacts secret-like string values with deterministic patterns", () => {
+    expect(
+      redactValue({
+        authorization: "Bearer should-be-redacted-by-key",
+        note: "send Bearer abcdefghijklmnopqrstuvwxyz to the API",
+        custom: "customer-secret-123",
+      }),
+    ).toEqual({
+      authorization: "[REDACTED]",
+      note: "send [REDACTED] to the API",
+      custom: "customer-secret-123",
+    });
+
+    expect(
+      redactValue(
+        { note: "token custom-secret-123" },
+        { patterns: [/custom-secret-\d+/], preserveLength: true },
+      ),
+    ).toEqual({ note: "token *****************" });
+  });
+
+  it("detects and throws for secret-like values", () => {
+    const value = {
+      nested: {
+        note: "Bearer abcdefghijklmnopqrstuvwxyz",
+      },
+    };
+
+    expect(detectSecretLikeValues(value)).toEqual([
+      {
+        kind: "bearer-token",
+        path: "nested.note",
+        preview: "[secret-like:33]",
+      },
+    ]);
+    expect(() => assertNoSecretLikeValues(value)).toThrow(TraceGateSecretLeakError);
+  });
+
+  it("detects secret-like keys and honors detection options", () => {
+    expect(
+      detectSecretLikeValues({ customerEmail: "a@example.com" }, { keys: ["customerEmail"] }),
+    ).toEqual([
+      {
+        kind: "secret-key",
+        path: "customerEmail",
+        preview: "[secret-like:13]",
+      },
+    ]);
+    expect(detectSecretLikeValues({ token: "secret-token" }, { detect: false })).toEqual([]);
+  });
+
+  it("redacts segmented API keys", () => {
+    const value = { note: "use sk-proj-1234567890abcdef1234567890abcdef" };
+
+    expect(redactValue(value)).toEqual({ note: "use [REDACTED]" });
+    expect(detectSecretLikeValues(value)).toEqual([
+      {
+        kind: "api-key",
+        path: "note",
+        preview: "[secret-like:44]",
+      },
+    ]);
   });
 });
 

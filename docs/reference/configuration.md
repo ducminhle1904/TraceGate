@@ -2,7 +2,7 @@
 
 TraceGate CLI configuration starts with `tracegate.config.ts` in the project root.
 
-## Planned Surfaces
+## Surfaces
 
 - Core harness options.
 - Tool contract definitions.
@@ -25,7 +25,12 @@ TraceGate CLI configuration starts with `tracegate.config.ts` in the project roo
 - Redaction by default for known secret-like fields.
 - Framework-neutral naming.
 
+## Policy And Redaction
+
+Use `definePolicy()` with `createPolicyEvaluator()` for risk-tier approvals, blocked tiers, environment overrides, tool overrides, and required evidence.
+
+Use `createHarness({ redaction })` or `redactValue(value, options)` for key and string-pattern redaction. Redaction is deterministic and local; it is not a full DLP system.
+
 ## Next-Phase TODOs
 
-- Add policy/redaction config after Phase 5.
 - Add adapter-specific config after Phase 6.

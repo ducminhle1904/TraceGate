@@ -209,13 +209,11 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
         contract,
         approval: "missing",
         context: getRunContext(run),
+        environment: getRunEnvironment(run),
+        evidence: run.evidence,
+        input: parsedInput.data,
       });
-      const verdict = await resolveVerdict(
-        contract,
-        parsedInput.data,
-        getRunContext(run),
-        initialVerdict,
-      );
+      const verdict = await resolveVerdict(contract, parsedInput.data, run, initialVerdict);
       const redactedInput = toJsonValue(parsedInput.data);
 
       if (verdict.status === "block") {
@@ -300,9 +298,10 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
   const resolveVerdict = async (
     contract: ToolContract,
     input: unknown,
-    context: HarnessContext,
+    run: TraceGateRun,
     initialVerdict: PolicyVerdict,
   ): Promise<PolicyVerdict> => {
+    const context = getRunContext(run);
     if (initialVerdict.status !== "review") {
       return initialVerdict;
     }
@@ -318,7 +317,14 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
       return initialVerdict;
     }
 
-    return policyEvaluator({ contract, approval, context });
+    return policyEvaluator({
+      contract,
+      approval,
+      context,
+      environment: getRunEnvironment(run),
+      evidence: run.evidence,
+      input,
+    });
   };
 
   const recordToolEvent = async (
@@ -401,6 +407,10 @@ function createId(prefix: string): string {
 
 function getRunContext(run: TraceGateRun): HarnessContext {
   return run.context ?? {};
+}
+
+function getRunEnvironment(run: TraceGateRun) {
+  return run.surface?.environment ?? run.context?.surface?.environment;
 }
 
 function snapshotRun(run: TraceGateRun): TraceGateRun {

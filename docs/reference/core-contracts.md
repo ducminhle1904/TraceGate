@@ -32,13 +32,16 @@ The name fails because contract names cannot contain spaces.
 
 ### `evaluatePolicy(input)`
 
-Evaluates the minimal Phase 1 policy primitive. It does not execute tools.
+Evaluates the minimal default policy primitive. It does not execute tools.
 
 Fields:
 
 - `contract`: a `ToolContract`.
 - `approval`: optional `approved`, `denied`, or `missing`.
-- `context`: optional `HarnessContext`; accepted for future policy inputs and does not affect Phase 1 verdicts.
+- `context`: optional `HarnessContext`.
+- `environment`: optional runtime environment.
+- `evidence`: optional evidence records.
+- `input`: optional parsed tool input.
 
 Return shape:
 
@@ -59,13 +62,41 @@ evaluatePolicy({ contract: highRiskContract });
 
 If `highRiskContract.requiresApproval` is true and approval is missing, the verdict is `review`.
 
+### `definePolicy(config)` / `createPolicyEvaluator(policy)`
+
+Defines configurable policy defaults for side-effecting tools.
+
+Fields:
+
+- `requireApprovalForRiskTiers`: risk tiers that require approval.
+- `blockRiskTiers`: risk tiers that are always blocked.
+- `environmentOverrides`: environment-specific policy rules.
+- `toolOverrides`: tool-specific policy rules.
+- `requiredEvidence`: evidence labels required by tool name.
+
+Example:
+
+```ts
+createPolicyEvaluator(
+  definePolicy({
+    requireApprovalForRiskTiers: ["high", "critical"],
+    requiredEvidence: {
+      issueRefund: ["manager"],
+    },
+  }),
+);
+```
+
 ### `redactValue(value, options)`
 
-Deterministically redacts configured key names and obvious secret-like keys in plain objects and arrays.
+Deterministically redacts configured key names, obvious secret-like keys, and common secret-like string values in plain objects and arrays.
 
 Fields:
 
 - `keys`: extra key names to redact.
+- `patterns`: extra regular expressions to redact from string values.
+- `detect`: set to `false` to disable value-pattern redaction.
+- `preserveLength`: preserve matched string length when replacing value matches.
 - `replacement`: replacement string, defaults to `[REDACTED]`.
 - `maxDepth`: recursion limit, defaults to `8`.
 
@@ -80,6 +111,12 @@ Result:
 ```ts
 { token: "[REDACTED]", visible: "ok" }
 ```
+
+### `detectSecretLikeValues(value, options)` / `assertNoSecretLikeValues(value, options)`
+
+Detects common secret-like string values and reports stable findings with `path`, `kind`, and `preview`.
+
+`assertNoSecretLikeValues()` throws `TraceGateSecretLeakError` when findings exist.
 
 ## Schemas And Types
 

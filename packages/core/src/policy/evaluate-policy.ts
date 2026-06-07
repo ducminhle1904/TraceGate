@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import type { HarnessContext } from "../schema/surface.js";
+import type { EvidenceRecord } from "../evidence/evidence.js";
+import type { Environment, HarnessContext } from "../schema/surface.js";
 import type { ToolContract } from "../schema/tool-contract.js";
 import type { PolicyVerdict } from "./verdict.js";
 
@@ -12,6 +13,9 @@ export interface EvaluatePolicyInput {
   contract: ToolContract;
   approval?: ApprovalState;
   context?: HarnessContext;
+  environment?: Environment | undefined;
+  evidence?: EvidenceRecord[] | undefined;
+  input?: unknown;
 }
 
 export function evaluatePolicy(input: EvaluatePolicyInput): PolicyVerdict {

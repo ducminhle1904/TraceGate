@@ -2,6 +2,6 @@
 
 Core contracts, schemas, and policy primitives for TraceGate.
 
-Phase 1 implemented the framework-neutral contract layer: tool contracts, policy verdicts, trace rows, evidence records, matrix cases, and small redaction helpers.
+TraceGate core includes framework-neutral contracts, runtime wrapping, configurable policy defaults, redaction, replay fixture contracts, trace sinks, and matrix case schemas.
 
-Phase 2 adds the runtime interceptor layer: `createHarness()`, `wrapTool()`, run lifecycle methods, evidence recording, approval handling, and memory/JSONL trace sinks.
+Use `createHarness()` and `wrapTool()` to validate tool input, evaluate policy, redact traces, record evidence, and emit ordered trace events.

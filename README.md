@@ -18,6 +18,7 @@ AI agent demos often work until production behavior drifts: the model calls a ri
 
 - Not an agent framework.
 - Not a no-code workflow builder.
+- Not a replacement for application authorization, IAM, provider gateway guardrails, or security review.
 - Not an observability platform clone or replacement for LangSmith, Langfuse, Braintrust, Phoenix, Promptfoo, or gateway guardrails.
 - Not tied to Codex, Claude Code, or any specific coding agent.
 
@@ -26,7 +27,7 @@ AI agent demos often work until production behavior drifts: the model calls a ri
 TraceGate wraps tool execution with contracts, policy checks, redaction, and ordered trace events.
 
 ```ts
-import { createHarness, defineToolContract } from "@tracegate/core";
+import { createHarness, createPolicyEvaluator, definePolicy, defineToolContract } from "@tracegate/core";
 import { z } from "zod";
 
 const sendEmailContract = defineToolContract({
@@ -43,6 +44,14 @@ const sendEmailContract = defineToolContract({
 const harness = createHarness({
   surface: "support-dashboard",
   approvalHandler: async () => "approved",
+  policyEvaluator: createPolicyEvaluator(
+    definePolicy({
+      requireApprovalForRiskTiers: ["high", "critical"],
+      requiredEvidence: {
+        sendEmail: ["approval"],
+      },
+    }),
+  ),
 });
 
 const sendEmail = harness.wrapTool(sendEmailContract, async (input) => {
@@ -83,8 +92,11 @@ pnpm test
 
 - [Harness engineering](docs/concepts/harness-engineering.md)
 - [Tool-call contracts](docs/concepts/tool-call-contracts.md)
+- [Side-effect boundaries](docs/concepts/side-effect-boundaries.md)
 - [Getting started](docs/guides/getting-started.md)
 - [CI guide](docs/guides/ci.md)
+- [Policy cookbook](docs/guides/policy-cookbook.md)
+- [Redaction guide](docs/guides/redaction.md)
 - [Core contracts reference](docs/reference/core-contracts.md)
 - [Matrix file reference](docs/reference/matrix-file.md)
 - [Trace schema reference](docs/reference/trace-schema.md)
@@ -96,6 +108,7 @@ pnpm test
 - [Codex agent skill guide](docs/agent-skills/codex.md)
 - [Claude Code agent skill guide](docs/agent-skills/claude-code.md)
 - [Generate matrix cases skill guide](docs/agent-skills/generate-matrix-cases.md)
+- [Review policy skill guide](docs/agent-skills/review-policy.md)
 
 ## Roadmap
 
