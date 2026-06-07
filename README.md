@@ -1,39 +1,65 @@
 # TraceGate
 
-TraceGate is a CI-first harness for tool-using AI agents. It gives developers contracts,
-policy gates, redaction, trace capture, matrix tests, replay fixtures, framework adapters,
-and observability exports without replacing their agent framework.
+<p align="center">
+  <img src="docs/assets/tracegate-icon-rounded.svg" width="112" alt="TraceGate icon" />
+</p>
 
-AI agent demos often work until production behavior drifts: the model calls a risky tool,
-omits required evidence, leaks sensitive data into traces, or changes tool behavior after a
-prompt or model update. TraceGate turns those behaviors into contracts that developers can
-test, review, and replay.
+[![core npm](https://img.shields.io/npm/v/@tracegate/core?label=%40tracegate%2Fcore)](https://www.npmjs.com/package/@tracegate/core)
+[![cli npm](https://img.shields.io/npm/v/@tracegate/cli?label=%40tracegate%2Fcli)](https://www.npmjs.com/package/@tracegate/cli)
+[![adapters npm](https://img.shields.io/npm/v/@tracegate/adapters?label=%40tracegate%2Fadapters)](https://www.npmjs.com/package/@tracegate/adapters)
+[![license](https://img.shields.io/badge/license-MIT-0f172a)](LICENSE)
 
-## What TraceGate Does
+TraceGate is a local-first harness for testing and controlling tool-using AI agents. It lets
+developers define tool contracts, enforce policy gates, redact trace data, capture JSONL
+traces, run matrix tests, and replay behavior in CI without replacing their agent framework.
 
-- Defines contracts for tools an agent can call.
-- Validates tool inputs before execution.
-- Applies side-effect policy gates for risky actions.
-- Records JSONL-friendly traces for debugging and replay.
-- Tests tool-call behavior in CI, not just final text.
-- Preserves evidence and provenance requirements.
-- Exports to existing observability and eval tools instead of replacing them.
+AI agent demos usually fail in the spaces between final answers: the model calls the wrong
+tool, skips evidence, sends a risky action for approval too late, leaks a token into logs, or
+changes tool behavior after a prompt or model update. TraceGate turns those behaviors into
+contracts that can be reviewed, tested, and replayed.
 
-## What TraceGate Is Not
+![TraceGate workflow](docs/assets/tracegate-workflow.svg)
+
+## Why TraceGate
+
+- Test tool behavior, not just final text.
+- Validate tool input before execution.
+- Gate side-effecting tools with explicit policy verdicts.
+- Record ordered traces that are useful for debugging and replay.
+- Compare stable behavior in CI while ignoring generated ids and timestamps.
+- Export downstream views to OpenTelemetry, Langfuse, and Braintrust-compatible formats.
+
+TraceGate is intentionally framework-neutral. Use it with OpenAI Agents SDK, LangGraph,
+your own agent loop, or any runner that can call a JavaScript function.
+
+## What It Is Not
 
 - Not an agent framework.
 - Not a no-code workflow builder.
+- Not a hosted observability platform.
 - Not a replacement for application authorization, IAM, provider gateway guardrails, or security review.
-- Not an observability platform clone or replacement for LangSmith, Langfuse, Braintrust, Phoenix, Promptfoo, or gateway guardrails.
-- Not tied to Codex, Claude Code, or any specific coding agent.
+- Not tied to Codex, Claude Code, LangSmith, Langfuse, Braintrust, Phoenix, or Promptfoo.
+
+## Install
+
+```bash
+pnpm add @tracegate/core
+pnpm add -D @tracegate/cli
+```
+
+Install adapters only when you need framework or observability integrations:
+
+```bash
+pnpm add @tracegate/adapters
+```
 
 ## 60-Second Quickstart
 
+Create a starter matrix config, then run it through the CLI:
+
 ```bash
-pnpm add @tracegate/core @tracegate/adapters
-pnpm add -D @tracegate/cli
-tracegate init
-tracegate test
+pnpm exec tracegate init
+pnpm exec tracegate test
 ```
 
 For this repository:
@@ -44,7 +70,10 @@ pnpm examples:check
 pnpm docs:build
 ```
 
-## Runtime Usage
+## Runtime Example
+
+Define a contract, create a harness, and wrap the real tool function. TraceGate validates the
+input, evaluates policy, records trace events, and only calls the tool when the verdict allows it.
 
 ```ts
 import { createHarness, createPolicyEvaluator, definePolicy, defineToolContract } from "@tracegate/core";
@@ -52,6 +81,7 @@ import { z } from "zod";
 
 const sendEmailContract = defineToolContract({
   name: "sendEmail",
+  description: "Send a customer support email.",
   riskTier: "high",
   requiresApproval: true,
   inputSchema: z.object({
@@ -79,11 +109,16 @@ const sendEmail = harness.wrapTool(sendEmailContract, async (input) => {
 });
 ```
 
-## Concrete Failing Test
+## Matrix Testing
 
-A matrix case can fail CI when a risky tool is attempted without approval:
+Matrix cases describe expected behavior around tool calls, policy verdicts, evidence, output
+shape, and redaction. Your project owns `runCase()`, so TraceGate does not need to instantiate
+your agent or know which model provider you use.
 
 ```ts
+import { defineMatrix } from "@tracegate/core";
+import { defineTraceGateConfig } from "@tracegate/cli/config";
+
 export default defineTraceGateConfig({
   matrix: defineMatrix([
     {
@@ -97,21 +132,24 @@ export default defineTraceGateConfig({
       },
     },
   ]),
-  async runCase() {
-    // Your project owns this function and runs its existing agent/tool path.
+  async runCase({ case: matrixCase }) {
+    // Run your real agent/tool path and return events, run, and optional output.
   },
 });
 ```
 
-Run the included example:
+Run the included matrix example:
 
 ```bash
 pnpm --filter tracegate-example-basic-tool-policy test:matrix
 ```
 
-## Trace Sketch
+## Replay
 
-Before replay, a local JSONL trace records ordered events:
+TraceGate can turn local JSONL traces into replay fixtures. Replay compares stable behavior,
+not generated ids, timestamps, or durations.
+
+Trace sketch:
 
 ```json
 {"type":"run.started","runId":"run-example"}
@@ -119,7 +157,7 @@ Before replay, a local JSONL trace records ordered events:
 {"type":"run.finished","run":{"status":"blocked"}}
 ```
 
-After fixture creation, replay compares stable behavior instead of timestamps or generated ids:
+Replay expectation:
 
 ```ts
 expect: {
@@ -127,6 +165,12 @@ expect: {
   policyVerdicts: { sendEmail: ["review"] },
   runStatus: "blocked",
 }
+```
+
+Run the included replay example:
+
+```bash
+pnpm --filter tracegate-example-replay-failure test:replay
 ```
 
 ## Adapters And Exports
@@ -137,33 +181,37 @@ import { createTraceGateLangGraphTool } from "@tracegate/adapters/langgraph";
 import { createOpenTelemetryTraceSink } from "@tracegate/adapters/opentelemetry";
 ```
 
-Package entrypoints:
-
 | Entry point | Purpose |
 | --- | --- |
-| `@tracegate/core` | contracts, runtime harness, traces, replay schemas, policy, redaction |
-| `@tracegate/cli` | matrix tests, replay, fixture creation, CI reports |
+| `@tracegate/core` | Contracts, runtime harness, traces, replay schemas, policy, redaction |
+| `@tracegate/cli` | Matrix tests, replay, fixture creation, JSON and JUnit reports |
 | `@tracegate/adapters/openai-agents` | OpenAI Agents SDK function tools |
 | `@tracegate/adapters/langgraph` | LangGraph/LangChain structured tools |
-| `@tracegate/adapters/opentelemetry` | OpenTelemetry trace sink |
+| `@tracegate/adapters/opentelemetry` | OpenTelemetry trace sink and event attributes |
 | `@tracegate/adapters/braintrust` | Braintrust-compatible eval rows |
 | `@tracegate/adapters/langfuse` | Langfuse-compatible trace events |
 
 ## Examples
 
-| Example | Command |
-| --- | --- |
-| Basic tool policy | `pnpm --filter tracegate-example-basic-tool-policy test:matrix` |
-| Replay failure | `pnpm --filter tracegate-example-replay-failure test:replay` |
-| OpenAI Agents SDK | `pnpm --filter tracegate-example-openai-agents start` |
-| LangGraph JS | `pnpm --filter tracegate-example-langgraph-js start` |
+| Example | What it demonstrates | Command |
+| --- | --- | --- |
+| Basic tool policy | Review verdicts, blocked tool calls, matrix assertions | `pnpm --filter tracegate-example-basic-tool-policy test:matrix` |
+| Replay failure | Fixture replay against current behavior | `pnpm --filter tracegate-example-replay-failure test:replay` |
+| OpenAI Agents SDK | Guarded function tool without model credentials | `pnpm --filter tracegate-example-openai-agents start` |
+| LangGraph JS | Guarded structured tool in a ToolNode-style flow | `pnpm --filter tracegate-example-langgraph-js start` |
+
+Run every local example:
+
+```bash
+pnpm examples:check
+```
 
 ## Compatibility
 
 | Category | Examples | TraceGate relationship |
 | --- | --- | --- |
-| Agent frameworks | OpenAI Agents SDK, LangGraph, Mastra | Wrap tool execution without replacing the framework. |
-| Observability | LangSmith, Langfuse, Phoenix, Helicone | Export traces and policy events; do not replace dashboards. |
+| Agent frameworks | OpenAI Agents SDK, LangGraph, custom runners | Wrap tools and preserve framework ownership of agent execution. |
+| Observability | OpenTelemetry, Langfuse, LangSmith, Phoenix | Emit downstream views while JSONL remains the local source of truth. |
 | Evals | Braintrust, Promptfoo | Add contract-first tool behavior checks and replay fixtures. |
 | Gateway guardrails | Portkey, Invariant, Pangea, NeMo Guardrails | Complement request/response policy with local tool-call contracts. |
 
@@ -188,16 +236,18 @@ Package entrypoints:
 - [Comparisons](docs/comparisons.md)
 - [Release checklist](docs/guides/release-checklist.md)
 
-## Roadmap
+## Project Status
 
-- Phase 0: public positioning, repo scaffold, docs baseline.
-- Phase 1: core contracts, schema, policy verdict types, trace rows.
-- Phase 2: runtime interceptor and tool wrapper lifecycle.
-- Phase 3: eval matrix CLI and CI reporting.
-- Phase 4: deterministic replay from traces.
-- Phase 5: policy, approval, redaction, and security defaults.
-- Phase 6: adapters and observability exports.
-- Phase 7: examples, guides, docs site, and launch polish.
+TraceGate currently ships:
+
+- `@tracegate/core@0.0.1`
+- `@tracegate/cli@0.0.1`
+- `@tracegate/adapters@0.0.1`
+- Runnable local examples with no model/API credentials required.
+- A VitePress docs site built from the Markdown docs in this repo.
+
+The next product work should focus on deeper adapter coverage, stronger fixture ergonomics,
+and real-world example suites from production-style agent workflows.
 
 ## Contributing
 
