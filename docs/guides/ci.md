@@ -9,6 +9,7 @@ pnpm install
 pnpm type-check
 pnpm lint
 pnpm test
+pnpm examples:check
 ```
 
 ## Agent Checks
@@ -40,8 +41,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm type-check
+      - run: pnpm test
       - run: pnpm exec tracegate test --junit tracegate-junit.xml
       - run: pnpm exec tracegate replay fixtures/blocked-email.ts --junit tracegate-replay.xml
+      - run: pnpm docs:build
 ```
 
 ## CI Goals
@@ -52,6 +56,7 @@ jobs:
 - Fail when traces leak configured secrets.
 - Fail when replayed tool behavior, evidence, run status, or output shape drifts.
 
-## Next-Phase TODOs
+## Artifacts
 
-- Add hosted CI artifact examples.
+Write JUnit reports with `--junit <path>` and upload them with your CI provider's artifact
+step when you want historical test results. TraceGate does not require hosted storage.

@@ -5,6 +5,23 @@
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ducminhle1904/TraceGate.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/ducminhle1904/TraceGate/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/ducminhle1904/TraceGate/issues"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "tool-calls",
+    "guardrails",
+    "evals",
+    "replay"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -14,6 +31,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "type-check": "tsc -p tsconfig.test.json --noEmit",

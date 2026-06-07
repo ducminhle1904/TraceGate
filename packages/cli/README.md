@@ -2,6 +2,12 @@
 
 Command line interface for running TraceGate matrix tests.
 
+## Install
+
+```bash
+pnpm add -D @tracegate/cli
+```
+
 ## Commands
 
 ```bash
@@ -21,3 +27,13 @@ tracegate doctor
 ```
 
 TraceGate loads `tracegate.config.ts` by default. The project supplies `runCase()`; the CLI does not create or run an agent by itself.
+
+## CI
+
+```bash
+tracegate test --json
+tracegate test --junit tracegate-junit.xml
+tracegate replay fixtures/example.ts --junit tracegate-replay.xml
+```
+
+The JSON and JUnit outputs are intended for local automation and CI artifacts.

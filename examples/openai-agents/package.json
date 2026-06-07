@@ -1,0 +1,19 @@
+{
+  "name": "tracegate-example-openai-agents",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter @tracegate/adapters build && tsc -p tsconfig.json",
+    "start": "pnpm build && node dist/index.js"
+  },
+  "dependencies": {
+    "@openai/agents": "^0.11.6",
+    "@tracegate/adapters": "workspace:*",
+    "@tracegate/core": "workspace:*",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1"
+  }
+}

@@ -26,8 +26,14 @@ TraceGate is designed to complement existing LLM observability, eval, red-team, 
 - Model gateway.
 - Agent graph runtime.
 
-## Next-Phase TODOs
+## Phase 6 Integrations
 
-- Add concrete export examples.
-- Add a decision guide for teams already using observability tools.
-- Add integration diagrams after adapters exist.
+- Use `@tracegate/adapters/openai-agents` when your agent already exposes OpenAI Agents SDK
+  function tools.
+- Use `@tracegate/adapters/langgraph` when your graph already executes LangChain/LangGraph
+  structured tools.
+- Use `@tracegate/adapters/opentelemetry`, `@tracegate/adapters/braintrust`, or
+  `@tracegate/adapters/langfuse` when TraceGate traces need to appear in existing
+  observability or eval workflows.
+- Keep app authorization, IAM, and provider gateway guardrails in place; TraceGate checks
+  local tool-call contracts and side-effect boundaries.

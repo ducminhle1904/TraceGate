@@ -1,6 +1,7 @@
 # Getting Started
 
-TraceGate currently provides core contracts, runtime wrappers, and a matrix-test CLI.
+TraceGate provides core contracts, runtime wrappers, policy/redaction defaults, JSONL traces,
+matrix testing, replay fixtures, framework adapters, and observability exports.
 
 ## Current Setup
 
@@ -20,14 +21,26 @@ tracegate init
 tracegate test
 ```
 
+## Local Repo Flow
+
+From this repository:
+
+```bash
+pnpm install
+pnpm examples:check
+pnpm docs:build
+```
+
 ## What To Expect
 
 - `@tracegate/core` defines contracts, runtime wrappers, trace sinks, and matrix schemas.
 - `@tracegate/cli` runs matrix tests through your project-owned `runCase()` function.
-- Adapter packages will connect TraceGate to existing agent frameworks.
+- `@tracegate/adapters` connects TraceGate to OpenAI Agents SDK, LangGraph JS,
+  OpenTelemetry, Braintrust-style eval rows, and Langfuse-compatible trace events.
 
-## Next-Phase TODOs
+## Next Steps
 
-- Add replay fixtures after Phase 4.
-- Add framework adapter examples after adapter packages exist.
-- Add troubleshooting for common setup failures.
+- Start with `examples/basic-tool-policy` to see a blocked risky tool.
+- Use `examples/replay-failure` to see deterministic replay.
+- Use `examples/openai-agents` or `examples/langgraph-js` if your agent already uses one
+  of those frameworks.

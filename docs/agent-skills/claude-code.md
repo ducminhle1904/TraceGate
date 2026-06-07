@@ -16,7 +16,17 @@ This document is guidance for using Claude Code with TraceGate. It is not an exe
 - Convert a known incident trace into a replay scenario.
 - Check whether a matrix case validates tool behavior rather than final prose only.
 
-## Next-Phase TODOs
+## Copyable Prompt
 
-- Add Claude Code prompt templates.
-- Add safety checklist examples for file, shell, browser, and deploy tools.
+```text
+Add TraceGate to one existing tool boundary. Keep the change small: define a contract,
+wrap the tool, add a matrix case, and report the exact verification commands. Do not
+replace the current agent framework.
+```
+
+## Safety Checklist Examples
+
+- file tools: require path validation and redaction of file contents
+- shell tools: require approval for mutating commands
+- browser tools: record evidence for external page actions
+- deploy tools: mark as high or critical risk and require approval

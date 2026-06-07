@@ -18,7 +18,16 @@ This document is guidance for using Codex with TraceGate. It is not an executabl
 - Review a policy rule for over-blocking or under-blocking.
 - Inspect a trace and propose a replay fixture.
 
-## Next-Phase TODOs
+## Copyable Prompt
 
-- Add copyable Codex prompts after the CLI and matrix DSL exist.
-- Add examples for OpenAI Agents SDK and LangGraph JS repos.
+```text
+Inspect this agent repo and identify one risky tool-call boundary that should be wrapped
+with TraceGate. Add the smallest contract, harness wrapper, and matrix case that proves the
+tool is blocked or reviewed before side effects happen. Preserve the existing framework.
+```
+
+## Example Targets
+
+- `examples/openai-agents`
+- `examples/langgraph-js`
+- `examples/basic-tool-policy`

@@ -9,7 +9,7 @@ A tool-call contract describes what an agent is allowed to call, what input shap
 - Input validation happens before the real tool executes.
 - Policy verdicts should be recorded even when a tool is blocked.
 
-## Phase 1 API
+## Core API
 
 ```ts
 import { defineToolContract } from "@tracegate/core";
@@ -28,11 +28,24 @@ defineToolContract({
 });
 ```
 
-`defineToolContract()` is implemented in Phase 1. It validates contract metadata and preserves the Zod `inputSchema` for later runtime validation.
+`defineToolContract()` validates contract metadata and preserves the Zod `inputSchema` for
+runtime validation.
 
-Runtime APIs such as `createHarness()` and `wrapTool()` are still planned for Phase 2.
+Use the contract with `createHarness()` and `harness.wrapTool()`:
 
-## Next-Phase TODOs
+```ts
+import { createHarness } from "@tracegate/core";
 
-- Document the JSON shape for serialized contract summaries.
-- Add examples for read-only, user-visible, and high-risk tools.
+const harness = createHarness();
+const issueRefund = harness.wrapTool(refundContract, async (input) => {
+  return refundClient.issue(input);
+});
+```
+
+## Risk Examples
+
+- `read`: search, lookup, retrieval.
+- `low`: local formatting or non-mutating data transforms.
+- `medium`: user-visible draft creation.
+- `high`: email send, refund, database write, deploy.
+- `critical`: destructive external mutation or irreversible financial action.

@@ -5,6 +5,23 @@
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ducminhle1904/TraceGate.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/ducminhle1904/TraceGate/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/ducminhle1904/TraceGate/issues"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "evals",
+    "cli",
+    "replay",
+    "ci"
+  ],
   "bin": {
     "tracegate": "./dist/bin/tracegate.js"
   },
@@ -21,6 +38,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "pnpm --filter @tracegate/core build && tsc -p tsconfig.json",
     "type-check": "pnpm --filter @tracegate/core build && tsc -p tsconfig.test.json --noEmit",

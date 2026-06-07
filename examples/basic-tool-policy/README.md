@@ -1,13 +1,21 @@
 # Basic Tool Policy Example
 
-Runnable example showing a high-risk tool call stopped by TraceGate review policy before execution.
+## Purpose
+
+Shows a high-risk tool call stopped by TraceGate review policy before execution.
+
+## Run
 
 ```bash
 pnpm --filter tracegate-example-basic-tool-policy test:matrix
 pnpm --filter tracegate-example-basic-tool-policy test:replay
 ```
 
-The matrix case expects:
+## Expected Output
+
+Both commands print JSON reports with `status: "passed"` and zero failures.
+
+## Demonstrates
 
 - `sendEmail` is attempted and intercepted.
 - policy verdict is `review`.

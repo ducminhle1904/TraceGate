@@ -1,0 +1,18 @@
+{
+  "name": "tracegate-example-replay-failure",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fixtures:create": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js fixtures create traces/refund-policy.jsonl --out fixtures/refund-policy.generated.ts --case replay-refund-policy --force",
+    "start": "pnpm test:replay",
+    "test:replay": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js replay fixtures/refund-policy.ts --json"
+  },
+  "dependencies": {
+    "@tracegate/core": "workspace:*",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@tracegate/cli": "workspace:*"
+  }
+}

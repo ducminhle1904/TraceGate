@@ -31,6 +31,13 @@ Use `definePolicy()` with `createPolicyEvaluator()` for risk-tier approvals, blo
 
 Use `createHarness({ redaction })` or `redactValue(value, options)` for key and string-pattern redaction. Redaction is deterministic and local; it is not a full DLP system.
 
-## Next-Phase TODOs
+## Adapter Configuration
 
-- Add adapter-specific config after Phase 6.
+Adapters use the same core harness options:
+
+- pass an existing `harness` when your framework owns lifecycle setup
+- pass `harnessOptions` when the adapter should create one
+- pass trace sinks such as JSONL, memory, or OpenTelemetry
+
+Adapter configuration remains code-owned. TraceGate does not introduce a separate hosted
+configuration service.

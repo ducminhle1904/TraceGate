@@ -98,8 +98,13 @@ export default {
 };
 ```
 
-## Next-Phase TODOs
+## Local Example
 
-- Add optional mocked tool-result playback.
-- Add fixture diff output for larger regressions.
-- Add adapter-specific capture guides once adapters exist.
+Run the included replay example:
+
+```bash
+pnpm --filter tracegate-example-replay-failure test:replay
+```
+
+Phase 7 does not add mocked tool-result playback. Replay compares behavior summaries from
+your project-owned `runCase()`.

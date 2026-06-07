@@ -1,5 +1,23 @@
 # LangGraph JS Example
 
-Planned example showing how TraceGate wraps tool execution in a LangGraph JS agent without replacing LangGraph.
+## Purpose
 
-This example will be implemented after adapter hooks are available.
+This example creates a LangGraph/LangChain-compatible structured tool with
+`createTraceGateLangGraphTool()` and invokes the local tool path without calling a model.
+
+## Run
+
+```bash
+pnpm --filter tracegate-example-langgraph-js start
+```
+
+## Expected Output
+
+The command prints JSON with the tool result, the TraceGate run id, and ordered trace event
+names.
+
+## Demonstrates
+
+- LangGraph/LangChain structured-tool creation.
+- `harness.wrapTool()` execution through the adapter.
+- Local trace events without model or API credentials.
