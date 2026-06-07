@@ -1,0 +1,16 @@
+{
+  "name": "tracegate-example-basic-tool-policy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:matrix": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js test --json"
+  },
+  "dependencies": {
+    "@tracegate/core": "workspace:*",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@tracegate/cli": "workspace:*"
+  }
+}

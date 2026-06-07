@@ -1,6 +1,6 @@
 # Getting Started
 
-TraceGate is currently in Phase 0. The repository baseline is installable, but runtime packages are not implemented yet.
+TraceGate currently provides core contracts, runtime wrappers, and a matrix-test CLI.
 
 ## Current Setup
 
@@ -11,7 +11,7 @@ pnpm lint
 pnpm test
 ```
 
-## Planned Flow
+## Local Matrix Flow
 
 ```bash
 pnpm add @tracegate/core
@@ -22,12 +22,12 @@ tracegate test
 
 ## What To Expect
 
-- `@tracegate/core` will define contracts and runtime wrappers.
-- `@tracegate/cli` will run matrix tests and replay fixtures.
+- `@tracegate/core` defines contracts, runtime wrappers, trace sinks, and matrix schemas.
+- `@tracegate/cli` runs matrix tests through your project-owned `runCase()` function.
 - Adapter packages will connect TraceGate to existing agent frameworks.
 
 ## Next-Phase TODOs
 
-- Replace preview commands with real package install commands.
-- Add the smallest runnable tool-policy example.
+- Add replay fixtures after Phase 4.
+- Add framework adapter examples after adapter packages exist.
 - Add troubleshooting for common setup failures.

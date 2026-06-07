@@ -1,5 +1,14 @@
 # Basic Tool Policy Example
 
-Planned example showing a high-risk tool call blocked before execution when required approval or evidence is missing.
+Runnable example showing a high-risk tool call stopped by TraceGate review policy before execution.
 
-This example will be implemented after `@tracegate/core` exposes contracts and `wrapTool()`.
+```bash
+pnpm --filter tracegate-example-basic-tool-policy test:matrix
+```
+
+The matrix case expects:
+
+- `sendEmail` is attempted and intercepted.
+- policy verdict is `review`.
+- output contains `blocked`.
+- the raw `secret-token` value is absent from traces.

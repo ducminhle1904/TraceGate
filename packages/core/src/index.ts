@@ -31,8 +31,16 @@ export {
 } from "./runtime/trace-sink.js";
 export type { JsonObject, JsonValue } from "./schema/json.js";
 export { JsonObjectSchema, JsonValueSchema } from "./schema/json.js";
-export type { MatrixCase, MatrixCaseExpectation } from "./schema/matrix-case.js";
-export { MatrixCaseExpectationSchema, MatrixCaseSchema } from "./schema/matrix-case.js";
+export type {
+  MatrixCase,
+  MatrixCaseExpectation,
+  MatrixCaseInput,
+} from "./schema/matrix-case.js";
+export {
+  defineMatrix,
+  MatrixCaseExpectationSchema,
+  MatrixCaseSchema,
+} from "./schema/matrix-case.js";
 export type { Environment, HarnessContext, HarnessSurface } from "./schema/surface.js";
 export {
   EnvironmentSchema,

@@ -1,6 +1,6 @@
 # Configuration Reference
 
-TraceGate configuration is not implemented in Phase 0. This page records the intended configuration surfaces so future phases stay consistent.
+TraceGate CLI configuration starts with `tracegate.config.ts` in the project root.
 
 ## Planned Surfaces
 
@@ -9,7 +9,14 @@ TraceGate configuration is not implemented in Phase 0. This page records the int
 - Policy rules.
 - Redaction rules.
 - Trace sink configuration.
-- CLI matrix configuration.
+- CLI matrix configuration through `matrix` and `runCase`.
+
+## CLI Defaults
+
+- Default config file: `tracegate.config.ts`.
+- Override config path with `tracegate test --config <path>` or `tracegate doctor --config <path>`.
+- TypeScript config files are loaded with `jiti`.
+- The project owns `runCase()`; TraceGate does not instantiate an agent framework.
 
 ## Defaults To Preserve
 
@@ -20,6 +27,5 @@ TraceGate configuration is not implemented in Phase 0. This page records the int
 
 ## Next-Phase TODOs
 
-- Add the canonical config file name.
-- Document config precedence.
-- Add examples for local file sinks and CI output.
+- Add policy/redaction config after Phase 5.
+- Add adapter-specific config after Phase 6.

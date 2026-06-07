@@ -1,7 +1,17 @@
 # @tracegate/cli
 
-Planned package for the `tracegate` command line interface.
+Command line interface for running TraceGate matrix tests.
 
-Expected future commands include `tracegate init`, `tracegate test`, `tracegate replay`, `tracegate fixtures create`, and `tracegate doctor`.
+## Commands
 
-Phase 0 only tracks package intent.
+```bash
+tracegate init
+tracegate test
+tracegate test --case blocks-email
+tracegate test --policy
+tracegate test --json
+tracegate test --junit tracegate-junit.xml
+tracegate doctor
+```
+
+TraceGate loads `tracegate.config.ts` by default. The project supplies `runCase()`; the CLI does not create or run an agent by itself.

@@ -58,10 +58,13 @@ await sendEmail({
 
 ## 60-Second Quickstart
 
-Phase 2 provides the core runtime package. CLI commands are still planned.
+Phase 3 provides core runtime wrappers plus the first matrix-test CLI.
 
 ```bash
 pnpm add @tracegate/core
+pnpm add -D @tracegate/cli
+tracegate init
+tracegate test
 ```
 
 For local development:
@@ -80,6 +83,7 @@ pnpm test
 - [Getting started](docs/guides/getting-started.md)
 - [CI guide](docs/guides/ci.md)
 - [Core contracts reference](docs/reference/core-contracts.md)
+- [Matrix file reference](docs/reference/matrix-file.md)
 - [Trace schema reference](docs/reference/trace-schema.md)
 - [Runtime semantics](docs/reference/runtime-semantics.md)
 - [Configuration reference](docs/reference/configuration.md)
@@ -87,6 +91,7 @@ pnpm test
 - [Comparisons](docs/comparisons.md)
 - [Codex agent skill guide](docs/agent-skills/codex.md)
 - [Claude Code agent skill guide](docs/agent-skills/claude-code.md)
+- [Generate matrix cases skill guide](docs/agent-skills/generate-matrix-cases.md)
 
 ## Roadmap
 

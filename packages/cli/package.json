@@ -1,0 +1,36 @@
+{
+  "name": "@tracegate/cli",
+  "version": "0.0.0",
+  "description": "Command line interface for running TraceGate matrix tests.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "bin": {
+    "tracegate": "./dist/bin/tracegate.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "pnpm --filter @tracegate/core build && tsc -p tsconfig.json",
+    "type-check": "pnpm --filter @tracegate/core build && tsc -p tsconfig.test.json --noEmit",
+    "test": "pnpm --filter @tracegate/core build && vitest run"
+  },
+  "dependencies": {
+    "@tracegate/core": "workspace:*",
+    "jiti": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1"
+  }
+}

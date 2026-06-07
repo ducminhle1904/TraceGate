@@ -1,6 +1,6 @@
 # CI Guide
 
-TraceGate should make agent behavior testable in CI. Phase 0 only provides repo verification commands.
+TraceGate matrix tests can run in CI after the project adds `tracegate.config.ts`.
 
 ## Current Checks
 
@@ -11,12 +11,35 @@ pnpm lint
 pnpm test
 ```
 
-## Planned Agent Checks
+## Agent Checks
 
 ```bash
 tracegate test --json
-tracegate test --junit
-tracegate replay traces/refund-failure.jsonl
+tracegate test --junit tracegate-junit.xml
+```
+
+## GitHub Actions Example
+
+```yaml
+name: tracegate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tracegate test --junit tracegate-junit.xml
 ```
 
 ## CI Goals
@@ -28,6 +51,5 @@ tracegate replay traces/refund-failure.jsonl
 
 ## Next-Phase TODOs
 
-- Add a GitHub Actions workflow example.
-- Document report schemas for JSON and JUnit output.
-- Show how production traces become regression cases.
+- Show how production traces become regression cases after Phase 4.
+- Add hosted CI artifact examples.

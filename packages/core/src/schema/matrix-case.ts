@@ -14,6 +14,7 @@ export const MatrixCaseExpectationSchema = z
     requiredEvidence: z.array(z.string().min(1)).optional(),
     outputKeys: z.array(z.string().min(1)).optional(),
     redactionChecks: z.array(z.string().min(1)).optional(),
+    toolInputIncludes: z.record(ToolNameSchema, JsonObjectSchema).optional(),
   })
   .strict();
 
@@ -30,3 +31,8 @@ export const MatrixCaseSchema = z
   .strict();
 
 export type MatrixCase = z.infer<typeof MatrixCaseSchema>;
+export type MatrixCaseInput = z.input<typeof MatrixCaseSchema>;
+
+export function defineMatrix(cases: readonly MatrixCaseInput[]): MatrixCase[] {
+  return z.array(MatrixCaseSchema).parse(cases);
+}

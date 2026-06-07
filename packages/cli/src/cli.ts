@@ -1,0 +1,286 @@
+import { access, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { parseArgs } from "node:util";
+
+import type { MatrixCase } from "@tracegate/core";
+
+import { evaluateMatrixAssertions } from "./assertions.js";
+import type { TraceGateRunnerResult } from "./config.js";
+import { DEFAULT_CONFIG_FILE, loadTraceGateConfig } from "./config-loader.js";
+import {
+  createMatrixReport,
+  formatConsoleReport,
+  type MatrixCaseResult,
+  summarizeOutput,
+  writeJunitReport,
+} from "./report.js";
+
+export interface CliIo {
+  cwd: string;
+  stdout: Pick<NodeJS.WritableStream, "write">;
+  stderr: Pick<NodeJS.WritableStream, "write">;
+  now?: () => Date;
+}
+
+type WriteableStream = Pick<NodeJS.WritableStream, "write">;
+
+export async function runCli(argv: string[], io: CliIo): Promise<number> {
+  const [command = "test", ...args] = argv;
+
+  try {
+    switch (command) {
+      case "init":
+        return await runInit(args, io);
+      case "test":
+        return await runTest(args, io);
+      case "doctor":
+        return await runDoctor(args, io);
+      case "--help":
+      case "-h":
+      case "help":
+        write(io.stdout, helpText());
+        return 0;
+      default:
+        write(io.stderr, `Unknown command "${command}".\n\n${helpText()}`);
+        return 1;
+    }
+  } catch (error) {
+    write(io.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+}
+
+async function runInit(args: string[], io: CliIo): Promise<number> {
+  const { values } = parseArgs({
+    args,
+    allowPositionals: false,
+    options: {
+      config: { type: "string", short: "c" },
+    },
+  });
+  const configValue = readOptionalString(values.config, "--config");
+  const configPath = resolve(io.cwd, configValue ?? DEFAULT_CONFIG_FILE);
+
+  try {
+    await writeFile(configPath, starterConfig(), { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "EEXIST") {
+      write(io.stderr, `TraceGate config already exists: ${configPath}\n`);
+      return 1;
+    }
+    throw error;
+  }
+  write(io.stdout, `Created ${configPath}\n`);
+  return 0;
+}
+
+async function runTest(args: string[], io: CliIo): Promise<number> {
+  const { values } = parseArgs({
+    args,
+    allowPositionals: false,
+    options: {
+      case: { type: "string" },
+      config: { type: "string", short: "c" },
+      json: { type: "boolean" },
+      junit: { type: "string" },
+      policy: { type: "boolean" },
+    },
+  });
+  const caseId = readOptionalString(values.case, "--case");
+  const configPath = readOptionalString(values.config, "--config");
+  const junitPath = readOptionalString(values.junit, "--junit");
+  const startedAt = now(io);
+  const { config } = await loadTraceGateConfig({
+    cwd: io.cwd,
+    ...(configPath ? { configPath } : {}),
+  });
+  const cases = filterCases(config.matrix, {
+    policyOnly: values.policy === true,
+    ...(caseId ? { caseId } : {}),
+  });
+
+  if (caseId && cases.length === 0) {
+    write(io.stderr, `No matrix case found with id "${caseId}".\n`);
+    return 1;
+  }
+
+  const results: MatrixCaseResult[] = [];
+  for (const [index, matrixCase] of cases.entries()) {
+    const caseStartedAt = now(io);
+    const failures: string[] = [];
+    let result: TraceGateRunnerResult | undefined;
+    let runId: string | undefined;
+    let traceEventCount = 0;
+
+    try {
+      result = await config.runCase({ case: matrixCase, index });
+      if (!result || (!result.events && !result.run)) {
+        failures.push("runCase must return at least events or run.");
+      } else {
+        const assertionResult = evaluateMatrixAssertions({ case: matrixCase, result });
+        failures.push(...assertionResult.failures);
+        runId = assertionResult.runId;
+        traceEventCount = assertionResult.traceEventCount;
+      }
+    } catch (error) {
+      failures.push(`runCase threw: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    const outputSummary = summarizeOutput(result?.output);
+    results.push({
+      id: matrixCase.id,
+      status: failures.length > 0 ? "failed" : "passed",
+      durationMs: now(io).getTime() - caseStartedAt.getTime(),
+      failures,
+      traceEventCount,
+      ...(outputSummary ? { outputSummary } : {}),
+      ...(runId ? { runId } : {}),
+    });
+  }
+
+  const report = createMatrixReport({
+    startedAt,
+    finishedAt: now(io),
+    cases: results,
+  });
+
+  if (junitPath) {
+    await writeJunitReport(report, resolve(io.cwd, junitPath));
+  }
+
+  if (values.json) {
+    write(io.stdout, `${JSON.stringify(report, null, 2)}\n`);
+  } else {
+    write(io.stdout, formatConsoleReport(report));
+  }
+
+  return report.status === "passed" ? 0 : 1;
+}
+
+async function runDoctor(args: string[], io: CliIo): Promise<number> {
+  const { values } = parseArgs({
+    args,
+    allowPositionals: false,
+    options: {
+      config: { type: "string", short: "c" },
+    },
+  });
+  const configValue = readOptionalString(values.config, "--config");
+  const checks: Array<{ ok: boolean; message: string }> = [];
+  const configPath = resolve(io.cwd, configValue ?? DEFAULT_CONFIG_FILE);
+
+  checks.push({ ok: true, message: "@tracegate/core package is linked" });
+  checks.push({ ok: await exists(configPath), message: `config exists: ${configPath}` });
+
+  try {
+    const loaded = await loadTraceGateConfig({
+      cwd: io.cwd,
+      ...(configValue ? { configPath: configValue } : {}),
+    });
+    checks.push({ ok: true, message: `config loads: ${loaded.path}` });
+    checks.push({ ok: true, message: `matrix cases: ${loaded.config.matrix.length}` });
+    checks.push({ ok: true, message: "runCase function found" });
+  } catch (error) {
+    checks.push({
+      ok: false,
+      message: `config validation failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+
+  for (const check of checks) {
+    write(io.stdout, `[${check.ok ? "OK" : "FAIL"}] ${check.message}\n`);
+  }
+
+  return checks.every((check) => check.ok) ? 0 : 1;
+}
+
+function filterCases(
+  cases: readonly MatrixCase[],
+  filters: { caseId?: string; policyOnly: boolean },
+): MatrixCase[] {
+  return cases.filter((matrixCase) => {
+    if (filters.caseId && matrixCase.id !== filters.caseId) {
+      return false;
+    }
+    if (filters.policyOnly && !isPolicyCase(matrixCase)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function isPolicyCase(matrixCase: MatrixCase): boolean {
+  const expectations = matrixCase.expect;
+  return Boolean(
+    expectations.requiredPolicyVerdict ||
+      expectations.forbiddenTools?.length ||
+      expectations.requiredEvidence?.length ||
+      expectations.redactionChecks?.length,
+  );
+}
+
+function readOptionalString(value: string | undefined, name: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value.length === 0) {
+    throw new Error(`${name} must not be empty.`);
+  }
+
+  return value;
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function write(stream: WriteableStream, value: string): void {
+  stream.write(value);
+}
+
+function now(io: CliIo): Date {
+  return io.now?.() ?? new Date();
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
+function helpText(): string {
+  return [
+    "TraceGate CLI",
+    "",
+    "Commands:",
+    "  tracegate init [--config tracegate.config.ts]",
+    "  tracegate test [--case id] [--policy] [--json] [--junit path] [--config path]",
+    "  tracegate doctor [--config path]",
+    "",
+  ].join("\n");
+}
+
+function starterConfig(): string {
+  return `import { defineMatrix } from "@tracegate/core";
+import { defineTraceGateConfig } from "@tracegate/cli/config";
+
+export default defineTraceGateConfig({
+  matrix: defineMatrix([
+    {
+      id: "example-case",
+      prompt: "Exercise one agent behavior.",
+      expect: {
+        requiredTools: ["lookupOrder"],
+      },
+    },
+  ]),
+  async runCase({ case: matrixCase }) {
+    throw new Error(\`Connect your agent runner for case "\${matrixCase.id}".\`);
+  },
+});
+`;
+}

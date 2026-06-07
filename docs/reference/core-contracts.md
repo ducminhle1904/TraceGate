@@ -139,10 +139,18 @@ Fields: `id`, optional `surface`, optional `context`, `startedAt`, optional `fin
 
 Failing example: `{ "id": "run-1", "status": "done" }`.
 
+### `defineMatrix(cases)`
+
+Parses a list of matrix cases and returns typed `MatrixCase[]`.
+
+Failing example: `defineMatrix([{ id: "case-1", prompt: "" }])`.
+
 ### `MatrixCaseSchema` / `MatrixCase`
 
 Represents a declarative eval case.
 
 Fields: `id`, `prompt`, optional `surface`, `expect`, optional JSON `metadata`.
+
+Expectation fields: `requiredTools`, `forbiddenTools`, `orderedToolSequence`, `requiredPolicyVerdict`, `requiredEvidence`, `outputKeys`, `redactionChecks`, and `toolInputIncludes`.
 
 Failing example: `{ "id": "case-1", "prompt": "" }`.

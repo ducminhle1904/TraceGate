@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  defineMatrix,
   defineToolContract,
   EvidenceRecordSchema,
   evaluatePolicy,
@@ -165,11 +166,30 @@ describe("trace, evidence, and matrix schemas", () => {
       expect: {
         forbiddenTools: ["sendEmail"],
         requiredPolicyVerdict: "block",
+        toolInputIncludes: {
+          sendEmail: { to: "a@example.com" },
+        },
       },
     });
 
     expect(run.toolCalls).toHaveLength(1);
     expect(matrixCase.expect.forbiddenTools).toEqual(["sendEmail"]);
+    expect(matrixCase.expect.toolInputIncludes?.sendEmail).toEqual({ to: "a@example.com" });
+  });
+
+  it("defines a parsed matrix case list", () => {
+    const matrix = defineMatrix([
+      {
+        id: "requires-lookup",
+        prompt: "Look up this order",
+        expect: {
+          requiredTools: ["lookupOrder"],
+        },
+      },
+    ]);
+
+    expect(matrix).toHaveLength(1);
+    expect(matrix[0]?.expect.requiredTools).toEqual(["lookupOrder"]);
   });
 
   it("rejects malformed required fields", () => {
