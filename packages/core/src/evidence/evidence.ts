@@ -25,3 +25,5 @@ export const EvidenceRecordSchema = z
   .strict();
 
 export type EvidenceRecord = z.infer<typeof EvidenceRecordSchema>;
+
+export type EvidenceRecordInput = z.input<typeof EvidenceRecordSchema>;

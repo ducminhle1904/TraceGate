@@ -18,15 +18,15 @@ AI agent demos often work until production behavior drifts: the model calls a ri
 
 - Not an agent framework.
 - Not a no-code workflow builder.
-- Not a replacement for LangSmith, Langfuse, Braintrust, Phoenix, Promptfoo, or gateway guardrails.
+- Not an observability platform clone or replacement for LangSmith, Langfuse, Braintrust, Phoenix, Promptfoo, or gateway guardrails.
 - Not tied to Codex, Claude Code, or any specific coding agent.
 
-## Core Contract Usage
+## Runtime Usage
 
-Phase 1 implements `@tracegate/core` contracts, schemas, minimal policy verdicts, and redaction helpers. Runtime harness APIs such as `createHarness()` and `wrapTool()` are planned for Phase 2.
+TraceGate wraps tool execution with contracts, policy checks, redaction, and ordered trace events.
 
 ```ts
-import { defineToolContract, evaluatePolicy } from "@tracegate/core";
+import { createHarness, defineToolContract } from "@tracegate/core";
 import { z } from "zod";
 
 const sendEmailContract = defineToolContract({
@@ -40,17 +40,25 @@ const sendEmailContract = defineToolContract({
   }),
 });
 
-const verdict = evaluatePolicy({
-  contract: sendEmailContract,
-  approval: "missing",
+const harness = createHarness({
+  surface: "support-dashboard",
+  approvalHandler: async () => "approved",
 });
 
-console.log(verdict.status); // "review"
+const sendEmail = harness.wrapTool(sendEmailContract, async (input) => {
+  return emailClient.send(input);
+});
+
+await sendEmail({
+  to: "customer@example.com",
+  subject: "Refund update",
+  body: "Your refund was approved.",
+});
 ```
 
 ## 60-Second Quickstart
 
-Phase 1 provides the core package. Runtime wrapping and CLI commands are still planned.
+Phase 2 provides the core runtime package. CLI commands are still planned.
 
 ```bash
 pnpm add @tracegate/core
@@ -73,6 +81,7 @@ pnpm test
 - [CI guide](docs/guides/ci.md)
 - [Core contracts reference](docs/reference/core-contracts.md)
 - [Trace schema reference](docs/reference/trace-schema.md)
+- [Runtime semantics](docs/reference/runtime-semantics.md)
 - [Configuration reference](docs/reference/configuration.md)
 - [Observability integrations](docs/integrations/observability.md)
 - [Comparisons](docs/comparisons.md)

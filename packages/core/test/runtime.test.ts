@@ -1,0 +1,389 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+import { z } from "zod";
+
+import {
+  createHarness,
+  createJsonlFileTraceSink,
+  createMemoryTraceSink,
+  defineToolContract,
+  type TraceEvent,
+  TraceGateInputValidationError,
+  TraceGatePolicyBlockedError,
+  TraceGateReviewRequiredError,
+  TraceGateToolExecutionError,
+} from "../src/index.js";
+
+const LookupInputSchema = z.object({
+  orderId: z.string().min(1),
+});
+
+const lookupOrderContract = defineToolContract({
+  name: "lookupOrder",
+  riskTier: "read",
+  inputSchema: LookupInputSchema,
+});
+
+const refundContract = defineToolContract({
+  name: "issueRefund",
+  riskTier: "high",
+  requiresApproval: true,
+  inputSchema: z.object({
+    orderId: z.string().min(1),
+    amount: z.number().positive(),
+  }),
+});
+
+describe("createHarness runtime", () => {
+  it("executes an allowed low-risk call and emits ordered trace events", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({ surface: "support-dashboard", traceSink });
+    const lookupOrder = harness.wrapTool(lookupOrderContract, async (input) => ({
+      id: input.orderId,
+      status: "paid",
+    }));
+
+    await harness.startRun({ id: "run-allowed" });
+    await expect(lookupOrder({ orderId: "order-1" })).resolves.toEqual({
+      id: "order-1",
+      status: "paid",
+    });
+    await harness.finishRun();
+
+    expect(traceSink.events.map((event) => event.type)).toEqual([
+      "run.started",
+      "tool.started",
+      "tool.succeeded",
+      "run.finished",
+    ]);
+    expect(traceSink.events.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("rejects invalid input before execution", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({ traceSink });
+    let executed = false;
+    const lookupOrder = harness.wrapTool(lookupOrderContract, () => {
+      executed = true;
+    });
+
+    await expect(lookupOrder({ orderId: "" })).rejects.toBeInstanceOf(
+      TraceGateInputValidationError,
+    );
+
+    expect(executed).toBe(false);
+    expect(traceSink.events.map((event) => event.type)).toEqual(["run.started", "tool.blocked"]);
+  });
+
+  it("does not execute when policy blocks a call", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({
+      traceSink,
+      policyEvaluator: ({ contract }) => ({
+        status: "block",
+        reasons: ["Blocked by test policy."],
+        riskTier: contract.riskTier,
+        toolName: contract.name,
+      }),
+    });
+    let executed = false;
+    const refund = harness.wrapTool(refundContract, () => {
+      executed = true;
+    });
+
+    await expect(refund({ orderId: "order-1", amount: 10 })).rejects.toBeInstanceOf(
+      TraceGatePolicyBlockedError,
+    );
+
+    expect(executed).toBe(false);
+    expect(traceSink.events.at(-1)).toMatchObject({ type: "tool.blocked" });
+  });
+
+  it("does not execute review verdicts without an approval handler", async () => {
+    const harness = createHarness();
+    let executed = false;
+    const refund = harness.wrapTool(refundContract, () => {
+      executed = true;
+    });
+
+    await expect(refund({ orderId: "order-1", amount: 10 })).rejects.toBeInstanceOf(
+      TraceGateReviewRequiredError,
+    );
+
+    expect(executed).toBe(false);
+  });
+
+  it("executes review verdicts when the approval handler approves", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({
+      traceSink,
+      approvalHandler: () => "approved",
+    });
+    const refund = harness.wrapTool(refundContract, async (input) => ({
+      refunded: input.amount,
+    }));
+
+    await expect(refund({ orderId: "order-1", amount: 10 })).resolves.toEqual({ refunded: 10 });
+
+    expect(traceSink.events.map((event) => event.type)).toEqual([
+      "run.started",
+      "tool.started",
+      "tool.succeeded",
+    ]);
+  });
+
+  it("does not execute when approval is denied", async () => {
+    const harness = createHarness({
+      approvalHandler: () => "denied",
+    });
+    let executed = false;
+    const refund = harness.wrapTool(refundContract, () => {
+      executed = true;
+    });
+
+    await expect(refund({ orderId: "order-1", amount: 10 })).rejects.toBeInstanceOf(
+      TraceGatePolicyBlockedError,
+    );
+
+    expect(executed).toBe(false);
+  });
+
+  it("traces thrown tool errors and preserves the original cause", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({ traceSink });
+    const original = new Error("CRM unavailable");
+    const lookupOrder = harness.wrapTool(lookupOrderContract, () => {
+      throw original;
+    });
+
+    let thrown: unknown;
+    try {
+      await lookupOrder({ orderId: "order-1" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(TraceGateToolExecutionError);
+    expect(thrown).toMatchObject({ cause: original });
+
+    expect(traceSink.events.at(-1)).toMatchObject({
+      type: "tool.failed",
+      record: {
+        error: "CRM unavailable",
+      },
+    });
+  });
+
+  it("records evidence on the active run and trace sink", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({ traceSink });
+    await harness.startRun({ id: "run-evidence" });
+
+    await harness.recordEvidence({
+      id: "evidence-1",
+      type: "user-approval",
+      timestamp: "2026-06-07T00:00:00.000Z",
+      content: { approvedBy: "manager" },
+    });
+
+    const evidenceEvent = traceSink.events.at(-1);
+    expect(evidenceEvent).toMatchObject({
+      type: "evidence.recorded",
+      record: {
+        id: "evidence-1",
+      },
+    });
+  });
+
+  it("starts a new run after finishing the previous run", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({ traceSink });
+    const lookupOrder = harness.wrapTool(lookupOrderContract, async (input) => input.orderId);
+
+    await harness.startRun({ id: "run-one" });
+    await lookupOrder({ orderId: "order-1" });
+    await harness.finishRun();
+    await lookupOrder({ orderId: "order-2" });
+
+    expect(traceSink.events.map((event) => event.type)).toEqual([
+      "run.started",
+      "tool.started",
+      "tool.succeeded",
+      "run.finished",
+      "run.started",
+      "tool.started",
+      "tool.succeeded",
+    ]);
+    expect(traceSink.events.at(5)).toMatchObject({
+      type: "tool.started",
+      runId: expect.not.stringMatching(/^run-one$/),
+    });
+  });
+
+  it("keeps tool evidence bound to the tool run", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({ traceSink });
+    let evidenceRunId = "";
+    const lookupOrder = harness.wrapTool(lookupOrderContract, async (_input, context) => {
+      await harness.startRun({ id: "run-two" });
+      await context.recordEvidence({
+        id: "evidence-bound",
+        type: "system",
+        timestamp: "2026-06-07T00:00:00.000Z",
+        content: { ok: true },
+      });
+      evidenceRunId = context.runId;
+      return "ok";
+    });
+
+    await harness.startRun({ id: "run-one" });
+    await lookupOrder({ orderId: "order-1" });
+
+    const evidenceEvent = traceSink.events.find((event) => event.type === "evidence.recorded");
+    expect(evidenceEvent).toMatchObject({
+      runId: evidenceRunId,
+      record: { id: "evidence-bound" },
+    });
+  });
+
+  it("passes a snapshot of the run to tool callbacks", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({ traceSink });
+    const lookupOrder = harness.wrapTool(lookupOrderContract, async (_input, context) => {
+      context.run.toolCalls.push({
+        id: "fake-tool-call",
+        runId: context.runId,
+        toolName: "fake",
+        riskTier: "read",
+        status: "succeeded",
+        timestamp: "2026-06-07T00:00:00.000Z",
+      });
+      return "ok";
+    });
+
+    await lookupOrder({ orderId: "order-1" });
+    await harness.finishRun();
+
+    const finishedEvent = traceSink.events.find((event) => event.type === "run.finished");
+    expect(finishedEvent).toMatchObject({
+      run: {
+        toolCalls: expect.not.arrayContaining([expect.objectContaining({ id: "fake-tool-call" })]),
+      },
+    });
+  });
+
+  it("serializes async trace sink writes in event order", async () => {
+    const events: TraceEvent[] = [];
+    const traceSink = {
+      async write(event: TraceEvent) {
+        if (event.sequence === 2) {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        events.push(event);
+      },
+    };
+    const harness = createHarness({ traceSink });
+    const lookupOrder = harness.wrapTool(lookupOrderContract, async () => "ok");
+
+    await lookupOrder({ orderId: "order-1" });
+    await harness.finishRun();
+
+    expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
+    expect(events.map((event) => event.type)).toEqual([
+      "run.started",
+      "tool.started",
+      "tool.succeeded",
+      "run.finished",
+    ]);
+  });
+
+  it("does not wrap trace sink failures as tool execution errors", async () => {
+    const sinkError = new Error("trace sink unavailable");
+    let executed = false;
+    const traceSink = {
+      write(event: TraceEvent) {
+        if (event.type === "tool.succeeded") {
+          throw sinkError;
+        }
+      },
+    };
+    const harness = createHarness({ traceSink });
+    const lookupOrder = harness.wrapTool(lookupOrderContract, async () => {
+      executed = true;
+      return "ok";
+    });
+
+    let thrown: unknown;
+    try {
+      await lookupOrder({ orderId: "order-1" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(sinkError);
+    expect(thrown).not.toBeInstanceOf(TraceGateToolExecutionError);
+    expect(executed).toBe(true);
+  });
+
+  it("writes parseable JSONL trace events", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tracegate-"));
+    const filePath = join(dir, "trace.jsonl");
+
+    try {
+      const harness = createHarness({ traceSink: createJsonlFileTraceSink(filePath) });
+      const lookupOrder = harness.wrapTool(lookupOrderContract, async () => ({ status: "paid" }));
+
+      await lookupOrder({ orderId: "order-1" });
+      await harness.finishRun();
+
+      const lines = (await readFile(filePath, "utf8")).trim().split("\n");
+      expect(lines.map((line) => JSON.parse(line).type)).toEqual([
+        "run.started",
+        "tool.started",
+        "tool.succeeded",
+        "run.finished",
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("redacts trace input and output fields", async () => {
+    const traceSink = createMemoryTraceSink();
+    const contract = defineToolContract({
+      name: "saveSecret",
+      riskTier: "low",
+      inputSchema: z.object({
+        token: z.string(),
+        visible: z.string(),
+      }),
+    });
+    const harness = createHarness({ traceSink });
+    const saveSecret = harness.wrapTool(contract, async () => ({
+      apiKey: "secret-api-key",
+      ok: true,
+    }));
+
+    await saveSecret({ token: "secret-token", visible: "safe" });
+
+    expect(traceSink.events.at(1)).toMatchObject({
+      record: {
+        input: {
+          token: "[REDACTED]",
+          visible: "safe",
+        },
+      },
+    });
+    expect(traceSink.events.at(2)).toMatchObject({
+      record: {
+        output: {
+          apiKey: "[REDACTED]",
+          ok: true,
+        },
+      },
+    });
+  });
+});

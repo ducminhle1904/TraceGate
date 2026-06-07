@@ -1,6 +1,6 @@
 # Core Contracts Reference
 
-This page documents the Phase 1 exports from `@tracegate/core`. Runtime harness APIs such as `createHarness()` and `wrapTool()` are not implemented yet.
+This page documents the contract and schema exports from `@tracegate/core`. Runtime harness behavior is covered in [Runtime Semantics](runtime-semantics.md).
 
 ## Helpers
 
