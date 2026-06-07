@@ -1,0 +1,17 @@
+{
+  "name": "tracegate",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "lint": "biome check --files-ignore-unknown=true .",
+    "type-check": "node -e \"console.log('type-check placeholder: packages are not implemented in Phase 0')\"",
+    "test": "node -e \"console.log('test placeholder: Vitest suites will be added with packages')\""
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}

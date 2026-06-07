@@ -1,0 +1,9 @@
+.serena/
+node_modules/
+dist/
+.turbo/
+.env
+.env.*
+coverage/
+*.log
+
