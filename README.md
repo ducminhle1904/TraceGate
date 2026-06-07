@@ -21,12 +21,12 @@ AI agent demos often work until production behavior drifts: the model calls a ri
 - Not a replacement for LangSmith, Langfuse, Braintrust, Phoenix, Promptfoo, or gateway guardrails.
 - Not tied to Codex, Claude Code, or any specific coding agent.
 
-## Preview Usage
+## Core Contract Usage
 
-The runtime API is planned for Phase 1 and Phase 2. This sketch shows the intended direction, not an implemented API yet.
+Phase 1 implements `@tracegate/core` contracts, schemas, minimal policy verdicts, and redaction helpers. Runtime harness APIs such as `createHarness()` and `wrapTool()` are planned for Phase 2.
 
 ```ts
-import { createHarness, defineToolContract } from "@tracegate/core";
+import { defineToolContract, evaluatePolicy } from "@tracegate/core";
 import { z } from "zod";
 
 const sendEmailContract = defineToolContract({
@@ -40,28 +40,23 @@ const sendEmailContract = defineToolContract({
   }),
 });
 
-const harness = createHarness({
-  contracts: [sendEmailContract],
-  traceSink: "jsonl",
+const verdict = evaluatePolicy({
+  contract: sendEmailContract,
+  approval: "missing",
 });
 
-const sendEmail = harness.wrapTool("sendEmail", async (input) => {
-  return emailClient.send(input);
-});
+console.log(verdict.status); // "review"
 ```
 
 ## 60-Second Quickstart
 
-Phase 0 only establishes the repository baseline. Once packages exist, the quickstart will become:
+Phase 1 provides the core package. Runtime wrapping and CLI commands are still planned.
 
 ```bash
 pnpm add @tracegate/core
-pnpm add -D @tracegate/cli
-tracegate init
-tracegate test
 ```
 
-For now, verify the repo scaffold:
+For local development:
 
 ```bash
 pnpm install
@@ -76,6 +71,8 @@ pnpm test
 - [Tool-call contracts](docs/concepts/tool-call-contracts.md)
 - [Getting started](docs/guides/getting-started.md)
 - [CI guide](docs/guides/ci.md)
+- [Core contracts reference](docs/reference/core-contracts.md)
+- [Trace schema reference](docs/reference/trace-schema.md)
 - [Configuration reference](docs/reference/configuration.md)
 - [Observability integrations](docs/integrations/observability.md)
 - [Comparisons](docs/comparisons.md)

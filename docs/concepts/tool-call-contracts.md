@@ -9,9 +9,17 @@ A tool-call contract describes what an agent is allowed to call, what input shap
 - Input validation happens before the real tool executes.
 - Policy verdicts should be recorded even when a tool is blocked.
 
-## Preview Shape
+## Phase 1 API
 
 ```ts
+import { defineToolContract } from "@tracegate/core";
+import { z } from "zod";
+
+const RefundInputSchema = z.object({
+  orderId: z.string(),
+  amount: z.number().positive(),
+});
+
 defineToolContract({
   name: "issueRefund",
   riskTier: "high",
@@ -20,10 +28,11 @@ defineToolContract({
 });
 ```
 
-This is preview documentation only. The API will be implemented in a later phase.
+`defineToolContract()` is implemented in Phase 1. It validates contract metadata and preserves the Zod `inputSchema` for later runtime validation.
+
+Runtime APIs such as `createHarness()` and `wrapTool()` are still planned for Phase 2.
 
 ## Next-Phase TODOs
 
-- Define the canonical risk tier names.
-- Document the JSON shape for serialized contracts.
+- Document the JSON shape for serialized contract summaries.
 - Add examples for read-only, user-visible, and high-risk tools.

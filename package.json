@@ -5,9 +5,10 @@
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
+    "build": "pnpm -r --if-present --filter './packages/*' build",
     "lint": "biome check --files-ignore-unknown=true .",
-    "type-check": "node -e \"console.log('type-check placeholder: packages are not implemented in Phase 0')\"",
-    "test": "node -e \"console.log('test placeholder: Vitest suites will be added with packages')\""
+    "type-check": "pnpm -r --if-present --filter './packages/*' type-check",
+    "test": "pnpm -r --if-present --filter './packages/*' test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.6",

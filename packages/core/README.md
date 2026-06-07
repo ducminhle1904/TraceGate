@@ -1,5 +1,7 @@
 # @tracegate/core
 
-Planned package for TraceGate contracts, policy verdicts, trace schemas, evidence records, redaction primitives, and the framework-neutral harness runtime.
+Core contracts, schemas, and policy primitives for TraceGate.
 
-Phase 0 does not implement runtime APIs here. See `plans/phase-01-core-spec.md` and `plans/phase-02-runtime-interceptor.md`.
+Phase 1 implements the framework-neutral contract layer: tool contracts, policy verdicts, trace rows, evidence records, matrix cases, and small redaction helpers.
+
+Runtime harness APIs such as `createHarness()` and `wrapTool()` are planned for Phase 2 and are not exported by this package yet.
