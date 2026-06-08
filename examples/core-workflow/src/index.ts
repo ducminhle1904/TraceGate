@@ -50,9 +50,19 @@ const readPolicy = harness.wrapTool(lookupPolicy, async (input) => ({
   topic: input.topic,
   result: "Notification requires approval before execution.",
 }));
-const notify = harness.wrapTool(sendNotification, async () => ({ sent: true }));
+let sideEffectExecutions = 0;
+const notify = harness.wrapTool(sendNotification, async () => {
+  sideEffectExecutions += 1;
+  return { sent: true };
+});
 
 const policy = await readPolicy({ topic: "notification approvals" });
+let validationBlocked = false;
+try {
+  await notify({ email: "not-email", message: "Invalid input should fail first" } as never);
+} catch {
+  validationBlocked = true;
+}
 let blocked = false;
 try {
   await notify({
@@ -77,6 +87,8 @@ console.log(
     {
       policy: policy.result,
       blocked,
+      validationBlocked,
+      sideEffectExecutions,
       tracePath,
       events: events.map((event) => event.type),
       redacted: !trace.includes("sk-proj-1234567890abcdef1234567890abcdef"),

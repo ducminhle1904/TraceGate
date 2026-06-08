@@ -109,6 +109,24 @@ const sendEmail = harness.wrapTool(sendEmailContract, async (input) => {
 });
 ```
 
+Projects with an existing tool registry can adapt manifests instead:
+
+```ts
+import { createToolContractAdapter } from "@tracegate/core";
+
+const fromManifest = createToolContractAdapter({
+  name: (tool) => tool.id,
+  riskTier: (tool) => tool.internalRisk,
+  riskMapping: {
+    safe: "read",
+    broker_write: "high",
+    destructive: "critical",
+  },
+  inputSchema: (tool) => tool.schema,
+  requiredEvidence: (tool) => tool.permissions,
+});
+```
+
 ## Matrix Testing
 
 Matrix cases describe expected behavior around tool calls, policy verdicts, evidence, output
@@ -148,6 +166,9 @@ pnpm --filter tracegate-example-basic-tool-policy test:matrix
 
 TraceGate can turn local JSONL traces into replay fixtures. Replay compares stable behavior,
 not generated ids, timestamps, or durations.
+
+Use exact output-key replay for stable contract outputs. Use subset mode when natural-language
+agent output may gain extra fields while required keys must remain present.
 
 Trace sketch:
 
@@ -198,6 +219,7 @@ import { createOpenTelemetryTraceSink } from "@tracegate/adapters/opentelemetry"
 | Basic tool policy | Review verdicts, blocked tool calls, matrix assertions | `pnpm --filter tracegate-example-basic-tool-policy test:matrix` |
 | Replay failure | Fixture replay against current behavior | `pnpm --filter tracegate-example-replay-failure test:replay` |
 | Core workflow | Read-only tool, denied side effect, JSONL trace sink, redaction | `pnpm --filter tracegate-example-core-workflow start` |
+| Manifest adapter | Existing tool manifest conversion and custom risk mapping | `pnpm --filter tracegate-example-manifest-adapter start` |
 | Compatibility static imports | ESM, tsx, CLI config loading, nested workspace package | `pnpm --filter tracegate-example-compatibility-static-imports test:all` |
 | OpenAI Agents SDK | Guarded function tool without model credentials | `pnpm --filter tracegate-example-openai-agents start` |
 | LangGraph JS | Guarded structured tool in a ToolNode-style flow | `pnpm --filter tracegate-example-langgraph-js start` |
@@ -242,14 +264,14 @@ pnpm examples:check
 
 This branch prepares:
 
-- `@tracegate/core@0.0.2`
-- `@tracegate/cli@0.0.2`
-- `@tracegate/adapters@0.0.2`
+- `@tracegate/core@0.0.3`
+- `@tracegate/cli@0.0.3`
+- `@tracegate/adapters@0.0.3`
 - Runnable local examples with no model/API credentials required.
 - A VitePress docs site built from the Markdown docs in this repo.
 
-The next product work should focus on deeper adapter coverage, stronger fixture ergonomics,
-and real-world example suites from production-style agent workflows.
+The next product work should focus on deeper adapter coverage and real-world example suites
+from production-style agent workflows.
 
 ## Contributing
 

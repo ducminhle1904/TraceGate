@@ -31,6 +31,28 @@ defineToolContract({
 `defineToolContract()` validates contract metadata and preserves the Zod `inputSchema` for
 runtime validation.
 
+If your project already has a tool registry, convert manifests instead of rewriting every
+contract by hand:
+
+```ts
+import { createToolContractAdapter } from "@tracegate/core";
+
+const fromManifest = createToolContractAdapter({
+  name: (tool) => tool.id,
+  riskTier: (tool) => tool.internalRisk,
+  riskMapping: {
+    safe: "read",
+    broker_write: "high",
+    destructive: "critical",
+  },
+  inputSchema: (tool) => tool.schema,
+  requiredEvidence: (tool) => tool.permissions,
+});
+```
+
+Keep the mapping explicit. Internal labels should describe your product domain; TraceGate tiers
+describe framework-neutral execution risk.
+
 Use the contract with `createHarness()` and `harness.wrapTool()`:
 
 ```ts

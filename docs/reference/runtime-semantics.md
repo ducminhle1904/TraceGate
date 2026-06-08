@@ -7,7 +7,7 @@
 - `createHarness(options)`: creates a runtime harness.
 - `harness.startRun(input?)`: starts an explicit run and emits `run.started`.
 - `harness.finishRun(status?)`: finishes the active run, emits `run.finished`, and flushes the sink.
-- `harness.recordEvidence(record)`: validates evidence, appends it to the active run, and emits `evidence.recorded`.
+- `harness.recordEvidence(record)`: validates evidence, auto-fills `timestamp` when omitted, appends it to the active run, and emits `evidence.recorded`.
 - `harness.wrapTool(contract, execute)`: returns an async wrapped tool.
 - `createMemoryTraceSink()`: stores ordered trace events in memory for tests.
 - `createJsonlFileTraceSink(path)`: appends one JSON trace event per line to a local file.

@@ -30,6 +30,49 @@ defineToolContract({
 
 The name fails because contract names cannot contain spaces.
 
+### `createToolContractAdapter(config)` / `defineToolContractFromManifest(manifest, config, overrides)`
+
+Builds TraceGate contracts from an existing project-owned tool manifest. Use this when your
+agent stack already has names, schemas, permissions, internal risk tiers, side-effect metadata,
+or evidence requirements.
+
+Example:
+
+```ts
+const fromManifest = createToolContractAdapter({
+  name: (tool) => tool.id,
+  description: (tool) => tool.summary,
+  riskTier: (tool) => tool.internalRisk,
+  riskMapping: {
+    safe: "read",
+    broker_write: "high",
+    destructive: "critical",
+  },
+  inputSchema: (tool) => tool.schema,
+  requiredEvidence: (tool) => tool.permissions,
+  sideEffects: (tool) => tool.sideEffects,
+  metadata: (tool) => ({ internalRisk: tool.internalRisk }),
+});
+
+const contract = fromManifest(internalToolManifest, {
+  requiredEvidence: ["manager-approval"],
+});
+```
+
+Unknown risk tiers throw by default. Pass `fallbackRiskTier` only when an explicit fallback is safer than failing configuration.
+
+### `mapRiskTier(value, mapping, options)`
+
+Maps internal risk labels to TraceGate risk tiers.
+
+```ts
+mapRiskTier("broker_write", {
+  safe: "read",
+  broker_write: "high",
+  destructive: "critical",
+});
+```
+
 ### `evaluatePolicy(input)`
 
 Evaluates the minimal default policy primitive. It does not execute tools.
@@ -143,6 +186,12 @@ Validates tool contract configuration and preserves a runtime Zod `inputSchema`.
 Fields: `name`, `riskTier`, `inputSchema`, optional `description`, `requiresApproval`, `sideEffects`, `requiredEvidence`, and JSON `metadata`.
 
 Failing example: `{ "name": "1bad", "riskTier": "high" }`.
+
+### `EvidenceRecordSchema` / `EvidenceRecord`
+
+Validates evidence recorded during a run. Runtime `recordEvidence()` accepts the same fields but
+auto-fills `timestamp` when omitted, so tool wrappers can record evidence without timestamp
+boilerplate while traces still contain concrete timestamps.
 
 ### `PolicyVerdictSchema` / `PolicyVerdict`
 

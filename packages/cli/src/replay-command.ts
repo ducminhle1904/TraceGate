@@ -146,8 +146,11 @@ export async function runReplayCommand(args: string[], io: CommandIo): Promise<n
         failureContext = "replay update";
         const updatedExpectation =
           result.events === undefined
-            ? { ...comparison.actual, traceEventCount: fixture.expect.traceEventCount }
-            : comparison.actual;
+            ? preserveReplayOutputPolicy(
+                { ...comparison.actual, traceEventCount: fixture.expect.traceEventCount },
+                fixture.expect,
+              )
+            : preserveReplayOutputPolicy(comparison.actual, fixture.expect);
         const updated = defineReplayFixture({
           ...fixture,
           captured:
@@ -220,6 +223,18 @@ async function loadCaseFromConfig(cwd: string, configPath: string | undefined, c
 async function loadReplayFixture(path: string): Promise<ReplayFixture> {
   const loaded = await loadTypeScriptModule(path);
   return ReplayFixtureSchema.parse(unwrapDefault(loaded));
+}
+
+function preserveReplayOutputPolicy(
+  updated: ReplayFixture["expect"],
+  previous: ReplayFixture["expect"],
+): ReplayFixture["expect"] {
+  return {
+    ...updated,
+    outputKeysMode: previous.outputKeysMode,
+    ignoredOutputKeys: previous.ignoredOutputKeys,
+    optionalOutputKeys: previous.optionalOutputKeys,
+  };
 }
 
 function formatFixtureModule(fixture: ReplayFixture): string {

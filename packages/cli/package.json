@@ -1,6 +1,6 @@
 {
   "name": "@tracegate/cli",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Command line interface for running TraceGate matrix tests.",
   "type": "module",
   "license": "MIT",

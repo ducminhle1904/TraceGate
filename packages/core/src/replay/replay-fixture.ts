@@ -22,6 +22,10 @@ export const ReplayEvidenceExpectationSchema = z
   })
   .strict();
 
+export const ReplayOutputKeysModeSchema = z.enum(["exact", "subset"]);
+
+export type ReplayOutputKeysMode = z.infer<typeof ReplayOutputKeysModeSchema>;
+
 export const ReplayExpectationSchema = z
   .object({
     toolSequence: z.array(ToolNameSchema).default([]),
@@ -30,6 +34,9 @@ export const ReplayExpectationSchema = z
     evidence: z.array(ReplayEvidenceExpectationSchema).default([]),
     runStatus: TraceGateRunStatusSchema.optional(),
     outputKeys: z.array(z.string().min(1)).default([]),
+    outputKeysMode: ReplayOutputKeysModeSchema.default("exact"),
+    ignoredOutputKeys: z.array(z.string().min(1)).default([]),
+    optionalOutputKeys: z.array(z.string().min(1)).default([]),
     traceEventCount: z.number().int().nonnegative().default(0),
   })
   .strict();
@@ -78,6 +85,12 @@ export interface ReplaySource {
 export interface ReplayComparisonResult {
   failures: string[];
   actual: ReplayExpectation;
+}
+
+export interface CreateReplayExpectationOptions {
+  outputKeysMode?: ReplayOutputKeysMode;
+  ignoredOutputKeys?: string[];
+  optionalOutputKeys?: string[];
 }
 
 export type TraceJsonlChunk = string | Uint8Array;
@@ -143,7 +156,10 @@ export function summarizeReplaySource(source: ReplaySource): ReplayTraceSummary 
   });
 }
 
-export function createReplayExpectation(source: ReplaySource): ReplayExpectation {
+export function createReplayExpectation(
+  source: ReplaySource,
+  options: CreateReplayExpectationOptions = {},
+): ReplayExpectation {
   const run = getSourceRun(source);
   const events = source.events ?? [];
   const toolEvents = events.filter(isToolEvent);
@@ -165,6 +181,7 @@ export function createReplayExpectation(source: ReplaySource): ReplayExpectation
     evidence: evidence.map((record) => ({ id: record.id, type: record.type })),
     ...(run?.status ? { runStatus: run.status } : {}),
     outputKeys: collectOutputKeys(source.output),
+    ...options,
     traceEventCount: events.length,
   });
 }
@@ -180,7 +197,7 @@ export function compareReplayExpectation(
   compareRecordArrays("tool statuses", expected.toolStatuses, actual.toolStatuses, failures);
   compareRecordArrays("policy verdicts", expected.policyVerdicts, actual.policyVerdicts, failures);
   compareEvidence(expected.evidence, actual.evidence, failures);
-  compareOutputKeys(expected.outputKeys, actual.outputKeys, failures);
+  compareOutputKeys(expected, actual.outputKeys, failures);
 
   if (expected.runStatus !== undefined && actual.runStatus !== expected.runStatus) {
     failures.push(
@@ -291,19 +308,56 @@ function compareEvidence(
   compareArray("evidence", expectedValues, actualValues, failures);
 }
 
-function compareOutputKeys(expected: string[], actual: string[], failures: string[]): void {
-  const expectedSet = new Set(expected);
-  const actualSet = new Set(actual);
-  const missing = expected.filter((key) => !actualSet.has(key));
-  const unexpected = actual.filter((key) => !expectedSet.has(key));
+function compareOutputKeys(
+  expected: ReplayExpectation,
+  actual: string[],
+  failures: string[],
+): void {
+  const ignoredSet = new Set(expected.ignoredOutputKeys);
+  const optionalSet = expandWithParentPaths(expected.optionalOutputKeys);
+  const ignoredOrOptionalParentSet = expandWithParentPaths([
+    ...expected.ignoredOutputKeys,
+    ...expected.optionalOutputKeys,
+  ]);
+  const expectedComparable = expected.outputKeys.filter((key) => !ignoredSet.has(key));
+  const expectedRequired = expectedComparable.filter(
+    (key) => !optionalSet.has(key) && !ignoredOrOptionalParentSet.has(key),
+  );
+  const allowed = new Set([
+    ...expectedComparable,
+    ...expected.optionalOutputKeys,
+    ...ignoredOrOptionalParentSet,
+  ]);
+  const actualComparable = actual.filter((key) => !ignoredSet.has(key));
+  const actualSet = new Set(actualComparable);
+  const missing = expectedRequired.filter((key) => !actualSet.has(key));
+  const unexpected =
+    expected.outputKeysMode === "exact" ? actualComparable.filter((key) => !allowed.has(key)) : [];
 
   if (missing.length === 0 && unexpected.length === 0) {
     return;
   }
 
+  const modeNote =
+    expected.outputKeysMode === "subset"
+      ? "subset mode allows extra output keys"
+      : "exact mode rejects extra output keys";
   failures.push(
-    `Expected output keys ${formatList(expected)}, got ${formatList(actual)}. Missing: ${formatList(missing)}. Unexpected: ${formatList(unexpected)}.`,
+    `Expected output keys ${formatList(expectedRequired)} (${modeNote}), got ${formatList(actualComparable)}. Missing: ${formatList(missing)}. Unexpected: ${formatList(unexpected)}. Ignored: ${formatList(expected.ignoredOutputKeys)}. Optional: ${formatList(expected.optionalOutputKeys)}.`,
   );
+}
+
+function expandWithParentPaths(paths: string[]): Set<string> {
+  const expanded = new Set<string>();
+
+  for (const path of paths) {
+    const parts = path.split(".");
+    for (let index = 1; index <= parts.length; index += 1) {
+      expanded.add(parts.slice(0, index).join("."));
+    }
+  }
+
+  return expanded;
 }
 
 function formatList(values: string[]): string {

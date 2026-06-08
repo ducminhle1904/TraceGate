@@ -637,9 +637,9 @@ export default {
         'Expected policy verdicts for "sendEmail" [review], got [allow].',
       );
       expect(io.stdoutText()).toContain("Expected evidence [approval-1:user-approval], got [].");
-      expect(io.stdoutText()).toContain(
-        "Expected output keys [blocked], got []. Missing: [blocked]. Unexpected: [].",
-      );
+      expect(io.stdoutText()).toContain("Expected output keys [blocked]");
+      expect(io.stdoutText()).toContain("exact mode rejects extra output keys");
+      expect(io.stdoutText()).toContain("Missing: [blocked]");
       expect(io.stdoutText()).toContain('Expected run status "blocked", got "succeeded".');
     });
   });

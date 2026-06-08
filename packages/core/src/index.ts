@@ -18,10 +18,12 @@ export {
   TraceGateSecretLeakError,
 } from "./redaction/redact.js";
 export type {
+  CreateReplayExpectationOptions,
   ReplayComparisonResult,
   ReplayExpectation,
   ReplayFixture,
   ReplayFixtureInput,
+  ReplayOutputKeysMode,
   ReplaySource,
   ReplayTraceSummary,
   TraceJsonlChunk,
@@ -34,6 +36,7 @@ export {
   parseTraceJsonlStream,
   ReplayExpectationSchema,
   ReplayFixtureSchema,
+  ReplayOutputKeysModeSchema,
   ReplayTraceSummarySchema,
   summarizeReplaySource,
 } from "./replay/replay-fixture.js";
@@ -102,6 +105,19 @@ export {
   ToolContractConfigSchema,
   ToolNameSchema,
 } from "./schema/tool-contract.js";
+export type {
+  MapRiskTierOptions,
+  RiskTierMapping,
+  ToolContractAdapter,
+  ToolContractAdapterConfig,
+  ToolContractManifestOverrides,
+  ToolManifestValue,
+} from "./schema/tool-contract-adapter.js";
+export {
+  createToolContractAdapter,
+  defineToolContractFromManifest,
+  mapRiskTier,
+} from "./schema/tool-contract-adapter.js";
 export type {
   ToolCallRecord,
   ToolCallStatus,

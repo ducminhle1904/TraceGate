@@ -110,6 +110,19 @@ importers:
         specifier: ^24.10.1
         version: 24.13.1
 
+  examples/manifest-adapter:
+    dependencies:
+      '@tracegate/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.1
+
   examples/openai-agents:
     dependencies:
       '@openai/agents':

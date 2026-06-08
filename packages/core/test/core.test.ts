@@ -6,14 +6,17 @@ import {
   compareReplayExpectation,
   createPolicyEvaluator,
   createReplayExpectation,
+  createToolContractAdapter,
   defineMatrix,
   definePolicy,
   defineReplayFixture,
   defineToolContract,
+  defineToolContractFromManifest,
   detectSecretLikeValues,
   EvidenceRecordSchema,
   evaluatePolicy,
   MatrixCaseSchema,
+  mapRiskTier,
   parseTraceJsonl,
   parseTraceJsonlStream,
   redactValue,
@@ -72,6 +75,96 @@ describe("defineToolContract", () => {
         inputSchema: { safeParse: () => ({ success: true }) } as never,
       }),
     ).toThrow();
+  });
+});
+
+describe("tool contract manifest adapters", () => {
+  type InternalToolManifest = {
+    id: string;
+    summary: string;
+    internalRisk: "safe" | "broker_write" | "destructive";
+    permissions: string[];
+    schema: typeof EmailInputSchema;
+    sideEffectKind?: string;
+  };
+
+  const manifest: InternalToolManifest = {
+    id: "notifyCustomer",
+    summary: "Send a customer notification",
+    internalRisk: "broker_write",
+    permissions: ["customer-email"],
+    schema: EmailInputSchema,
+    sideEffectKind: "email",
+  };
+
+  it("maps custom manifest fields into a typed tool contract", () => {
+    const adapter = createToolContractAdapter<InternalToolManifest, typeof EmailInputSchema>({
+      name: (tool) => tool.id,
+      description: (tool: InternalToolManifest) => tool.summary,
+      riskTier: (tool: InternalToolManifest) => tool.internalRisk,
+      riskMapping: {
+        safe: "read",
+        broker_write: "high",
+        destructive: "critical",
+      },
+      requiresApproval: (tool: InternalToolManifest) => tool.internalRisk !== "safe",
+      inputSchema: (tool: InternalToolManifest) => tool.schema,
+      requiredEvidence: (tool: InternalToolManifest) => tool.permissions,
+      sideEffects: (tool: InternalToolManifest) =>
+        tool.sideEffectKind ? [{ kind: tool.sideEffectKind, external: true }] : [],
+      metadata: (tool: InternalToolManifest) => ({
+        source: "internal-registry",
+        internalRisk: tool.internalRisk,
+      }),
+    });
+
+    const contract = adapter(manifest);
+
+    expect(contract).toMatchObject({
+      name: "notifyCustomer",
+      description: "Send a customer notification",
+      riskTier: "high",
+      requiresApproval: true,
+      requiredEvidence: ["customer-email"],
+      sideEffects: [{ kind: "email", external: true }],
+      metadata: { source: "internal-registry", internalRisk: "broker_write" },
+    });
+    expect(
+      contract.inputSchema.safeParse({ to: "a@example.com", subject: "Hi", body: "Body" }).success,
+    ).toBe(true);
+  });
+
+  it("supports direct conversion and overrides without mutating the manifest", () => {
+    const contract = defineToolContractFromManifest<InternalToolManifest, typeof EmailInputSchema>(
+      manifest,
+      {
+        name: (tool: InternalToolManifest) => tool.id,
+        riskTier: (tool: InternalToolManifest) => tool.internalRisk,
+        riskMapping: (value) => (value === "broker_write" ? "medium" : "read"),
+        inputSchema: (tool) => tool.schema,
+        metadata: (tool) => ({ internalRisk: tool.internalRisk }),
+      },
+      {
+        description: "Overridden description",
+        requiredEvidence: ["manager-approval"],
+        metadata: { release: "0.0.3" },
+      },
+    );
+
+    expect(contract).toMatchObject({
+      description: "Overridden description",
+      riskTier: "medium",
+      requiredEvidence: ["manager-approval"],
+      metadata: { internalRisk: "broker_write", release: "0.0.3" },
+    });
+    expect(manifest.permissions).toEqual(["customer-email"]);
+  });
+
+  it("fails clearly for unknown custom risk tiers unless a fallback is explicit", () => {
+    expect(() => mapRiskTier("broker_write", { safe: "read" })).toThrow(
+      'Unknown risk tier "broker_write"',
+    );
+    expect(mapRiskTier("broker_write", { safe: "read" }, { fallback: "high" })).toBe("high");
   });
 });
 
@@ -599,7 +692,62 @@ describe("replay fixtures", () => {
     ).toEqual(
       expect.arrayContaining([
         "Expected evidence [approval-1:user-approval], got [].",
-        "Expected output keys [blocked], got []. Missing: [blocked]. Unexpected: [].",
+        expect.stringContaining("Expected output keys [blocked]"),
+      ]),
+    );
+  });
+
+  it("supports subset replay output key expectations", () => {
+    const expected = createReplayExpectation(
+      { output: { answer: "ok" } },
+      { outputKeysMode: "subset" },
+    );
+
+    const comparison = compareReplayExpectation(expected, {
+      output: { answer: "ok", citations: ["doc-1"], meta: { latencyMs: 12 } },
+    });
+    expect(comparison.failures).toEqual([]);
+    expect(comparison.actual.outputKeysMode).toBe("exact");
+    expect(
+      compareReplayExpectation(expected, { output: { citations: ["doc-1"] } }).failures,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("subset mode allows extra output keys"),
+        expect.stringContaining("Missing: [answer]"),
+      ]),
+    );
+  });
+
+  it("supports ignored and optional replay output keys in exact mode", () => {
+    const expected = createReplayExpectation(
+      {
+        output: {
+          answer: "ok",
+          citations: ["doc-1"],
+          meta: { traceId: "run-1", latencyMs: 12 },
+        },
+      },
+      {
+        ignoredOutputKeys: ["meta.traceId"],
+        optionalOutputKeys: ["citations", "meta.latencyMs"],
+      },
+    );
+
+    expect(
+      compareReplayExpectation(expected, {
+        output: { answer: "ok" },
+      }).failures,
+    ).toEqual([]);
+    expect(
+      compareReplayExpectation(expected, {
+        output: { answer: "ok", meta: { traceId: "run-2" }, extra: true },
+      }).failures,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("exact mode rejects extra output keys"),
+        expect.stringContaining("Unexpected: [extra]"),
+        expect.stringContaining("Ignored: [meta.traceId]"),
+        expect.stringContaining("Optional: [citations, meta.latencyMs]"),
       ]),
     );
   });

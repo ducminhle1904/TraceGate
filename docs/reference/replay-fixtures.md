@@ -28,6 +28,9 @@ export default defineReplayFixture({
     evidence: [],
     runStatus: "blocked",
     outputKeys: ["blocked"],
+    outputKeysMode: "exact",
+    ignoredOutputKeys: [],
+    optionalOutputKeys: [],
     traceEventCount: 3,
   },
 });
@@ -40,7 +43,7 @@ export default defineReplayFixture({
 - `ReplayExpectationSchema`: parses the stable comparison summary.
 - `parseTraceJsonl(text)`: parses JSONL `TraceEvent` rows and reports malformed rows with line numbers.
 - `parseTraceJsonlStream(readable)`: parses JSONL trace rows incrementally for large trace files.
-- `createReplayExpectation(source)`: builds expectations from events, a final run, and optional output.
+- `createReplayExpectation(source, options?)`: builds expectations from events, a final run, optional output, and output-key comparison options.
 - `compareReplayExpectation(expected, source)`: compares current behavior against a fixture expectation.
 
 ## Compared Fields
@@ -56,6 +59,48 @@ Replay compares:
 - trace event count
 
 Replay intentionally ignores generated ids, timestamps, and durations by default.
+
+## Output Key Modes
+
+Replay output-key checks are deterministic, but not every agent output should be checked with the
+same strictness.
+
+Use exact mode for stable contract outputs:
+
+```ts
+expect: createReplayExpectation(
+  { events, output: { blocked: true } },
+  { outputKeysMode: "exact" },
+);
+```
+
+Exact mode is the default. It fails when required keys are missing or unexpected keys appear.
+
+Use subset mode for evolving agent responses where extra keys are acceptable:
+
+```ts
+expect: createReplayExpectation(
+  { events, output: { answer: "..." } },
+  { outputKeysMode: "subset" },
+);
+```
+
+Subset mode fails when expected keys are missing, but allows extra current output keys.
+
+Use ignored and optional keys for volatile metadata:
+
+```ts
+expect: createReplayExpectation(
+  { events, output },
+  {
+    outputKeysMode: "exact",
+    ignoredOutputKeys: ["meta.traceId", "meta.durationMs"],
+    optionalOutputKeys: ["citations", "meta.latencyMs"],
+  },
+);
+```
+
+Ignored keys are excluded from comparison. Optional keys may be present or absent without failing.
 
 ## CLI
 
