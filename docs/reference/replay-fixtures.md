@@ -56,6 +56,7 @@ Replay compares:
 - evidence ids and types
 - optional run status
 - output object keys, including nested keys
+- absent output keys and exact output path values when configured
 - trace event count
 
 Replay intentionally ignores generated ids, timestamps, and durations by default.
@@ -101,6 +102,26 @@ expect: createReplayExpectation(
 ```
 
 Ignored keys are excluded from comparison. Optional keys may be present or absent without failing.
+
+Use absent keys and semantic value checks for leaks or stable contract fields:
+
+```ts
+expect: createReplayExpectation(
+  { events, output },
+  {
+    outputKeysMode: "subset",
+    absentOutputKeys: ["debug.rawSecret"],
+    outputValues: {
+      blocked: true,
+      "reason.code": "approval_required",
+    },
+  },
+);
+```
+
+`absentOutputKeys` fails when a dotted output path exists. `outputValues` requires the path to
+exist and deeply equal the expected JSON value. Dotted path assertions do not support object keys
+that themselves contain literal dots.
 
 ## CLI
 

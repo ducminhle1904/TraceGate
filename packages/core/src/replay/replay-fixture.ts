@@ -4,7 +4,8 @@ import { z } from "zod";
 import { EvidenceTypeSchema } from "../evidence/evidence.js";
 import { PolicyVerdictStatusSchema } from "../policy/verdict.js";
 import { type RunTraceEvent, type TraceEvent, TraceEventSchema } from "../runtime/trace-sink.js";
-import { JsonObjectSchema } from "../schema/json.js";
+import type { JsonValue } from "../schema/json.js";
+import { JsonObjectSchema, JsonValueSchema } from "../schema/json.js";
 import { MatrixCaseSchema } from "../schema/matrix-case.js";
 import { ToolNameSchema } from "../schema/tool-contract.js";
 import {
@@ -37,6 +38,8 @@ export const ReplayExpectationSchema = z
     outputKeysMode: ReplayOutputKeysModeSchema.default("exact"),
     ignoredOutputKeys: z.array(z.string().min(1)).default([]),
     optionalOutputKeys: z.array(z.string().min(1)).default([]),
+    absentOutputKeys: z.array(z.string().min(1)).default([]),
+    outputValues: z.record(z.string().min(1), JsonValueSchema).default({}),
     traceEventCount: z.number().int().nonnegative().default(0),
   })
   .strict();
@@ -91,6 +94,8 @@ export interface CreateReplayExpectationOptions {
   outputKeysMode?: ReplayOutputKeysMode;
   ignoredOutputKeys?: string[];
   optionalOutputKeys?: string[];
+  absentOutputKeys?: string[];
+  outputValues?: Record<string, JsonValue>;
 }
 
 export type TraceJsonlChunk = string | Uint8Array;
@@ -198,6 +203,7 @@ export function compareReplayExpectation(
   compareRecordArrays("policy verdicts", expected.policyVerdicts, actual.policyVerdicts, failures);
   compareEvidence(expected.evidence, actual.evidence, failures);
   compareOutputKeys(expected, actual.outputKeys, failures);
+  compareOutputAssertions(expected, source.output, failures);
 
   if (expected.runStatus !== undefined && actual.runStatus !== expected.runStatus) {
     failures.push(
@@ -347,6 +353,33 @@ function compareOutputKeys(
   );
 }
 
+function compareOutputAssertions(
+  expected: ReplayExpectation,
+  output: unknown,
+  failures: string[],
+): void {
+  for (const path of expected.absentOutputKeys) {
+    if (getPathValue(output, path).exists) {
+      failures.push(`Expected output path "${path}" to be absent, but it was present.`);
+    }
+  }
+
+  for (const [path, expectedValue] of Object.entries(expected.outputValues)) {
+    const actual = getPathValue(output, path);
+    if (!actual.exists) {
+      failures.push(
+        `Expected output path "${path}" to equal ${formatJson(expectedValue)}, but the path was missing.`,
+      );
+      continue;
+    }
+    if (!jsonEqual(actual.value, expectedValue)) {
+      failures.push(
+        `Expected output path "${path}" to equal ${formatJson(expectedValue)}, got ${formatJson(actual.value)}.`,
+      );
+    }
+  }
+}
+
 function expandWithParentPaths(paths: string[]): Set<string> {
   const expanded = new Set<string>();
 
@@ -358,6 +391,48 @@ function expandWithParentPaths(paths: string[]): Set<string> {
   }
 
   return expanded;
+}
+
+function getPathValue(value: unknown, path: string): { exists: boolean; value?: unknown } {
+  let current = value;
+  for (const segment of path.split(".")) {
+    if (!isTraversable(current) || !(segment in current)) {
+      return { exists: false };
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return { exists: true, value: current };
+}
+
+function isTraversable(value: unknown): value is object {
+  return value !== null && typeof value === "object";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function jsonEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return (
+      left.length === right.length && left.every((value, index) => jsonEqual(value, right[index]))
+    );
+  }
+  if (isRecord(left) && isRecord(right)) {
+    const leftKeys = Object.keys(left).sort();
+    const rightKeys = Object.keys(right).sort();
+    return (
+      jsonEqual(leftKeys, rightKeys) && leftKeys.every((key) => jsonEqual(left[key], right[key]))
+    );
+  }
+  return false;
+}
+
+function formatJson(value: unknown): string {
+  return JSON.stringify(value);
 }
 
 function formatList(values: string[]): string {

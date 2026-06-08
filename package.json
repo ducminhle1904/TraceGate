@@ -17,7 +17,7 @@
     "docs:build": "vitepress build docs",
     "docs:dev": "vitepress dev docs",
     "docs:preview": "vitepress preview docs",
-    "examples:check": "pnpm --filter tracegate-example-basic-tool-policy test:matrix && pnpm --filter tracegate-example-basic-tool-policy test:replay && pnpm --filter tracegate-example-replay-failure test:replay && pnpm --filter tracegate-example-core-workflow start && pnpm --filter tracegate-example-manifest-adapter start && pnpm --filter tracegate-example-compatibility-static-imports test:all && pnpm --filter tracegate-example-compatibility-nested-agent test:all && pnpm --filter tracegate-example-openai-agents start && pnpm --filter tracegate-example-langgraph-js start",
+    "examples:check": "pnpm --filter tracegate-example-basic-tool-policy test:matrix && pnpm --filter tracegate-example-basic-tool-policy test:replay && pnpm --filter tracegate-example-replay-failure test:replay && pnpm --filter tracegate-example-core-workflow start && pnpm --filter tracegate-example-core-workflow test:redaction && pnpm --filter tracegate-example-manifest-adapter start && pnpm --filter tracegate-example-compatibility-static-imports test:all && pnpm --filter tracegate-example-compatibility-nested-agent test:all && pnpm --filter tracegate-example-openai-agents start && pnpm --filter tracegate-example-langgraph-js start",
     "lint": "biome check --files-ignore-unknown=true .",
     "type-check": "pnpm -r --if-present --filter './packages/*' type-check",
     "test": "pnpm -r --if-present --filter './packages/*' test"

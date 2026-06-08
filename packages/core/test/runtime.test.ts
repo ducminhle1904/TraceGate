@@ -139,17 +139,36 @@ describe("createHarness runtime", () => {
 
   it("does not execute when approval is denied", async () => {
     const harness = createHarness({
-      approvalHandler: () => "denied",
+      approvalHandler: () => ({ status: "denied", reason: "Manager rejected the refund." }),
     });
     let executed = false;
     const refund = harness.wrapTool(refundContract, () => {
       executed = true;
     });
 
-    await expect(refund({ orderId: "order-1", amount: 10 })).rejects.toBeInstanceOf(
-      TraceGatePolicyBlockedError,
-    );
+    let thrown: unknown;
+    try {
+      await refund({ orderId: "order-1", amount: 10 });
+    } catch (error) {
+      thrown = error;
+    }
 
+    expect(thrown).toBeInstanceOf(TraceGatePolicyBlockedError);
+    expect(thrown).toMatchObject({
+      verdict: {
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            source: "approval-handler",
+            rule: "approval-denied",
+            message: "Manager rejected the refund.",
+          }),
+          expect.objectContaining({
+            source: "runtime",
+            rule: "execution-skipped",
+          }),
+        ]),
+      },
+    });
     expect(executed).toBe(false);
   });
 

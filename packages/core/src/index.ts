@@ -1,5 +1,14 @@
-export type { EvidenceRecord, EvidenceRecordInput, EvidenceType } from "./evidence/evidence.js";
-export { EvidenceRecordSchema, EvidenceTypeSchema } from "./evidence/evidence.js";
+export type {
+  CreateEvidenceRecordOptions,
+  EvidenceRecord,
+  EvidenceRecordInput,
+  EvidenceType,
+} from "./evidence/evidence.js";
+export {
+  createEvidenceRecord,
+  EvidenceRecordSchema,
+  EvidenceTypeSchema,
+} from "./evidence/evidence.js";
 export type { ApprovalState, EvaluatePolicyInput } from "./policy/evaluate-policy.js";
 export { ApprovalStateSchema, evaluatePolicy } from "./policy/evaluate-policy.js";
 export type { PolicyConfig } from "./policy/policy-config.js";
@@ -8,8 +17,18 @@ export {
   definePolicy,
   PolicyConfigSchema,
 } from "./policy/policy-config.js";
-export type { PolicyVerdict, PolicyVerdictStatus } from "./policy/verdict.js";
-export { PolicyVerdictSchema, PolicyVerdictStatusSchema } from "./policy/verdict.js";
+export type {
+  PolicyDiagnostic,
+  PolicyDiagnosticSource,
+  PolicyVerdict,
+  PolicyVerdictStatus,
+} from "./policy/verdict.js";
+export {
+  PolicyDiagnosticSchema,
+  PolicyDiagnosticSourceSchema,
+  PolicyVerdictSchema,
+  PolicyVerdictStatusSchema,
+} from "./policy/verdict.js";
 export type { RedactValueOptions, SecretLeakFinding, SecretLeakKind } from "./redaction/redact.js";
 export {
   assertNoSecretLikeValues,
@@ -50,6 +69,7 @@ export {
 } from "./runtime/errors.js";
 export type {
   ApprovalHandler,
+  ApprovalHandlerResult,
   CreateHarnessOptions,
   Harness,
   PolicyEvaluator,

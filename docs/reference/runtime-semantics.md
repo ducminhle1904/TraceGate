@@ -19,7 +19,8 @@ When a wrapped tool is called:
 1. Ensure a run exists. If no run is active, the harness starts one automatically.
 2. Validate input with `contract.inputSchema`.
 3. Evaluate policy with the configured `policyEvaluator`, defaulting to `evaluatePolicy()`.
-4. If the verdict is `review`, call `approvalHandler` when configured.
+4. If the verdict is `review`, call `approvalHandler` when configured. Handlers may return
+   `"approved"`, `"denied"`, `"missing"`, or `{ status, reason, metadata }`.
 5. Execute the real tool only when the final verdict is `allow` or `warn`.
 6. Redact input, output, and error metadata before writing trace events.
 7. Emit ordered trace events to the configured sink.
@@ -31,6 +32,9 @@ When a wrapped tool is called:
 - `block`: do not execute; emit `tool.blocked`; throw `TraceGatePolicyBlockedError`.
 - `review` with approving handler: re-evaluate policy with `approval: "approved"` and execute if final verdict allows.
 - `review` without handler or without approval: do not execute; emit `tool.blocked`; throw `TraceGateReviewRequiredError`.
+
+`PolicyVerdict.diagnostics` may explain contract, policy, approval-handler, and runtime decisions.
+The CLI prints these diagnostics in human failure output while JSON and JUnit report shapes stay stable.
 
 ## Error Behavior
 

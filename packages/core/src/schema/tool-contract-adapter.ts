@@ -72,7 +72,7 @@ export function mapRiskTier<TManifest = unknown>(
     return RiskTierSchema.parse(mapped);
   }
 
-  return fallbackOrThrow(value, options);
+  return fallbackOrThrow(value, options, Object.keys(mapping));
 }
 
 export function createToolContractAdapter<
@@ -138,13 +138,16 @@ function resolveOptional<TManifest, TValue>(
 function fallbackOrThrow<TManifest>(
   value: unknown,
   options: MapRiskTierOptions<TManifest>,
+  knownValues: string[] = [],
 ): RiskTier {
   if (options.fallback !== undefined) {
     return RiskTierSchema.parse(options.fallback);
   }
 
   const label = options.label ?? "risk tier";
+  const known =
+    knownValues.length > 0 ? ` Known mapped values: ${knownValues.sort().join(", ")}.` : "";
   throw new Error(
-    `Unknown ${label} "${String(value)}". Provide a riskMapping entry or fallbackRiskTier.`,
+    `Unknown ${label} "${String(value)}".${known} Provide a riskMapping entry or fallbackRiskTier.`,
   );
 }

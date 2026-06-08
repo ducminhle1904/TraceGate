@@ -29,3 +29,17 @@ export type EvidenceRecord = z.infer<typeof EvidenceRecordSchema>;
 export type EvidenceRecordInput = Omit<z.input<typeof EvidenceRecordSchema>, "timestamp"> & {
   timestamp?: string;
 };
+
+export interface CreateEvidenceRecordOptions {
+  now?: () => string;
+}
+
+export function createEvidenceRecord(
+  input: EvidenceRecordInput,
+  options: CreateEvidenceRecordOptions = {},
+): EvidenceRecord {
+  return EvidenceRecordSchema.parse({
+    ...input,
+    timestamp: input.timestamp ?? options.now?.() ?? new Date().toISOString(),
+  });
+}

@@ -92,6 +92,77 @@ export default defineTraceGateConfig({
     });
   });
 
+  it("prints runtime policy diagnostics from failed runCase calls", async () => {
+    await withTempDir(async (cwd) => {
+      await writeConfig(
+        cwd,
+        `import { createHarness, defineToolContract } from "@tracegate/core";
+import { z } from "zod";
+
+const contract = defineToolContract({
+  name: "issueRefund",
+  riskTier: "high",
+  inputSchema: z.object({ orderId: z.string() }),
+});
+
+export default {
+  matrix: [{ id: "blocked-runtime", prompt: "Issue refund", expect: {} }],
+  async runCase() {
+    const harness = createHarness({
+      policyEvaluator: ({ contract }) => ({
+        status: "block",
+        reasons: ["Blocked by test policy."],
+        riskTier: contract.riskTier,
+        toolName: contract.name,
+        diagnostics: [
+          {
+            source: "policy",
+            rule: "blocked-risk-tier",
+            message: "Policy blocks risk tier high.",
+            riskTier: contract.riskTier,
+          },
+        ],
+      }),
+    });
+    const refund = harness.wrapTool(contract, async () => ({ ok: true }));
+    await refund({ orderId: "order-1" });
+    return { output: {} };
+  },
+};`,
+      );
+      const io = createIo(cwd);
+
+      await expect(runCli(["test"], io)).resolves.toBe(1);
+
+      expect(io.stdoutText()).toContain("riskTier=high");
+      expect(io.stdoutText()).toContain("reasons=Blocked by test policy.");
+      expect(io.stdoutText()).toContain("diagnostics=policy/blocked-risk-tier");
+      expect(io.stdoutText()).toContain("runtime/execution-skipped");
+    });
+  });
+
+  it("does not crash when foreign errors include partial verdict fields", async () => {
+    await withTempDir(async (cwd) => {
+      await writeConfig(
+        cwd,
+        `export default {
+  matrix: [{ id: "foreign-error", prompt: "Throw partial verdict", expect: {} }],
+  async runCase() {
+    const error = new Error("foreign policy wrapper failed");
+    error.verdict = { status: "block" };
+    throw error;
+  },
+};`,
+      );
+      const io = createIo(cwd);
+
+      await expect(runCli(["test"], io)).resolves.toBe(1);
+
+      expect(io.stdoutText()).toContain("runCase threw: foreign policy wrapper failed");
+      expect(io.stdoutText()).not.toContain("Cannot read");
+    });
+  });
+
   it("summarizes non-JSON output without crashing", async () => {
     await withTempDir(async (cwd) => {
       await writeConfig(

@@ -1,10 +1,10 @@
 import type { z } from "zod";
 
 import type { EvidenceRecord, EvidenceRecordInput } from "../evidence/evidence.js";
-import { EvidenceRecordSchema } from "../evidence/evidence.js";
+import { createEvidenceRecord } from "../evidence/evidence.js";
 import type { ApprovalState, EvaluatePolicyInput } from "../policy/evaluate-policy.js";
 import { evaluatePolicy } from "../policy/evaluate-policy.js";
-import type { PolicyVerdict } from "../policy/verdict.js";
+import type { PolicyDiagnostic, PolicyVerdict } from "../policy/verdict.js";
 import { type RedactValueOptions, redactValue } from "../redaction/redact.js";
 import type { JsonObject, JsonValue } from "../schema/json.js";
 import { JsonObjectSchema, JsonValueSchema } from "../schema/json.js";
@@ -55,12 +55,20 @@ export interface ToolRuntimeContext {
   recordEvidence(record: EvidenceRecordInput): Promise<EvidenceRecord>;
 }
 
+export type ApprovalHandlerResult =
+  | ApprovalState
+  | {
+      status: ApprovalState;
+      reason?: string;
+      metadata?: JsonObject;
+    };
+
 export type ApprovalHandler = (input: {
   contract: ToolContract;
   input: unknown;
   context: HarnessContext;
   verdict: PolicyVerdict;
-}) => ApprovalState | Promise<ApprovalState>;
+}) => ApprovalHandlerResult | Promise<ApprovalHandlerResult>;
 
 export type PolicyEvaluator = (
   input: EvaluatePolicyInput,
@@ -167,10 +175,7 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
     run: TraceGateRun,
     record: EvidenceRecordInput,
   ): Promise<EvidenceRecord> => {
-    const parsed = EvidenceRecordSchema.parse({
-      ...record,
-      timestamp: record.timestamp ?? nowIso(),
-    });
+    const parsed = createEvidenceRecord(record, { now: nowIso });
     run.evidence.push(parsed);
     await writeEvent({
       type: "evidence.recorded",
@@ -220,34 +225,46 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
       const redactedInput = toJsonValue(parsedInput.data);
 
       if (verdict.status === "block") {
+        const blockedVerdict = withDiagnostic(verdict, {
+          source: "runtime",
+          rule: "execution-skipped",
+          message: "Tool was not executed because the policy verdict was block.",
+          riskTier: contract.riskTier,
+        });
         await recordToolEvent(run, "tool.blocked", {
           toolName: contract.name,
           riskTier: contract.riskTier,
           status: "blocked",
           input: redactedInput,
-          policyVerdict: verdict,
-          error: verdict.reasons.join("; "),
+          policyVerdict: blockedVerdict,
+          error: blockedVerdict.reasons.join("; "),
         });
         throw new TraceGatePolicyBlockedError("Tool call blocked by TraceGate policy.", {
           runId: run.id,
           toolName: contract.name,
-          verdict,
+          verdict: blockedVerdict,
         });
       }
 
       if (verdict.status === "review") {
+        const reviewVerdict = withDiagnostic(verdict, {
+          source: "runtime",
+          rule: "execution-skipped",
+          message: "Tool was not executed because the policy verdict was review.",
+          riskTier: contract.riskTier,
+        });
         await recordToolEvent(run, "tool.blocked", {
           toolName: contract.name,
           riskTier: contract.riskTier,
           status: "blocked",
           input: redactedInput,
-          policyVerdict: verdict,
-          error: verdict.reasons.join("; "),
+          policyVerdict: reviewVerdict,
+          error: reviewVerdict.reasons.join("; "),
         });
         throw new TraceGateReviewRequiredError("Tool call requires review before execution.", {
           runId: run.id,
           toolName: contract.name,
-          verdict,
+          verdict: reviewVerdict,
         });
       }
 
@@ -309,24 +326,43 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
       return initialVerdict;
     }
 
-    const approval = await options.approvalHandler?.({
-      contract,
-      input,
-      context,
-      verdict: initialVerdict,
-    });
+    const approvalResult = normalizeApprovalResult(
+      await options.approvalHandler?.({
+        contract,
+        input,
+        context,
+        verdict: initialVerdict,
+      }),
+    );
 
-    if (approval === undefined || approval === "missing") {
-      return initialVerdict;
+    if (approvalResult.status === "missing") {
+      return withDiagnostic(initialVerdict, {
+        source: options.approvalHandler ? "approval-handler" : "runtime",
+        rule: options.approvalHandler ? "approval-missing" : "approval-handler-missing",
+        message:
+          approvalResult.reason ??
+          (options.approvalHandler
+            ? "Approval handler returned missing approval."
+            : "No approval handler is configured for a review verdict."),
+        riskTier: contract.riskTier,
+        approval: "missing",
+      });
     }
 
-    return policyEvaluator({
+    const resolved = await policyEvaluator({
       contract,
-      approval,
       context,
+      approval: approvalResult.status,
       environment: getRunEnvironment(run),
       evidence: run.evidence,
       input,
+    });
+    return withDiagnostic(resolved, {
+      source: "approval-handler",
+      rule: `approval-${approvalResult.status}`,
+      message: approvalResult.reason ?? `Approval handler returned "${approvalResult.status}".`,
+      riskTier: contract.riskTier,
+      approval: approvalResult.status,
     });
   };
 
@@ -414,6 +450,27 @@ function getRunContext(run: TraceGateRun): HarnessContext {
 
 function getRunEnvironment(run: TraceGateRun) {
   return run.surface?.environment ?? run.context?.surface?.environment;
+}
+
+function normalizeApprovalResult(result: ApprovalHandlerResult | undefined): {
+  status: ApprovalState;
+  reason?: string;
+  metadata?: JsonObject;
+} {
+  if (result === undefined) {
+    return { status: "missing" };
+  }
+  if (typeof result === "string") {
+    return { status: result };
+  }
+  return result;
+}
+
+function withDiagnostic(verdict: PolicyVerdict, diagnostic: PolicyDiagnostic): PolicyVerdict {
+  return {
+    ...verdict,
+    diagnostics: [...(verdict.diagnostics ?? []), diagnostic],
+  };
 }
 
 function snapshotRun(run: TraceGateRun): TraceGateRun {

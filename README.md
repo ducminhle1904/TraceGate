@@ -168,7 +168,8 @@ TraceGate can turn local JSONL traces into replay fixtures. Replay compares stab
 not generated ids, timestamps, or durations.
 
 Use exact output-key replay for stable contract outputs. Use subset mode when natural-language
-agent output may gain extra fields while required keys must remain present.
+agent output may gain extra fields while required keys must remain present. Replay fixtures can
+also require paths to be absent and assert exact JSON values at dotted output paths.
 
 Trace sketch:
 
@@ -185,6 +186,9 @@ expect: {
   toolStatuses: { sendEmail: ["blocked"] },
   policyVerdicts: { sendEmail: ["review"] },
   runStatus: "blocked",
+  outputKeysMode: "subset",
+  absentOutputKeys: ["debug.rawSecret"],
+  outputValues: { blocked: true },
 }
 ```
 
@@ -193,6 +197,21 @@ Run the included replay example:
 ```bash
 pnpm --filter tracegate-example-replay-failure test:replay
 ```
+
+## Redaction And Policy Diagnostics
+
+```ts
+import { assertNoSecretLikeValues } from "@tracegate/core";
+
+assertNoSecretLikeValues(trace, {
+  ignoreRedactionPlaceholders: true,
+  redactionPlaceholders: ["[REDACTED]", "<hidden>"],
+});
+```
+
+Policy verdicts keep `status`, `reasons`, `riskTier`, and `toolName`, and may include structured
+`diagnostics` explaining which contract, policy, approval-handler, or runtime rule made the call
+allow, review, or block.
 
 ## Adapters And Exports
 
@@ -264,9 +283,9 @@ pnpm examples:check
 
 This branch prepares:
 
-- `@tracegate/core@0.0.3`
-- `@tracegate/cli@0.0.3`
-- `@tracegate/adapters@0.0.3`
+- `@tracegate/core@0.1.0`
+- `@tracegate/cli@0.1.0`
+- `@tracegate/adapters@0.1.0`
 - Runnable local examples with no model/API credentials required.
 - A VitePress docs site built from the Markdown docs in this repo.
 

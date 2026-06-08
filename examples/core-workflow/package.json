@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "pnpm --filter @tracegate/core build && tsc -p tsconfig.json",
-    "start": "pnpm build && node dist/index.js"
+    "start": "pnpm build && node dist/index.js",
+    "test:redaction": "pnpm build && node dist/redaction-fixture.js"
   },
   "dependencies": {
     "@tracegate/core": "workspace:*",

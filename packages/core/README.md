@@ -35,6 +35,8 @@ const searchKnowledgeBase = harness.wrapTool(contract, async ({ query }) => {
 - tool contracts and risk tiers
 - harness runtime and trace sinks
 - policy and approval helpers
-- redaction and secret-leak detection
+- structured policy diagnostics
+- redaction and placeholder-aware secret-leak detection
+- standalone evidence record creation
 - matrix case schemas
-- replay fixture schemas and JSONL parsers
+- replay fixture schemas, flexible output assertions, and JSONL parsers

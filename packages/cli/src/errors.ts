@@ -1,13 +1,30 @@
-import { TraceGateRuntimeError } from "@tracegate/core";
+import { type PolicyVerdict, TraceGateRuntimeError } from "@tracegate/core";
+
+const DETAIL_LIMIT = 5;
 
 export function formatRunCaseError(error: unknown): string {
-  if (error instanceof TraceGateRuntimeError) {
+  if (error instanceof TraceGateRuntimeError || isTraceGateRuntimeErrorLike(error)) {
     const parts = [error.message];
     if (error.toolName) {
       parts.push(`tool=${error.toolName}`);
     }
-    if (error.verdict) {
-      parts.push(`verdict=${error.verdict.status}`);
+    if (isPolicyVerdictLike(error.verdict)) {
+      const verdict = error.verdict;
+      parts.push(`verdict=${verdict.status}`);
+      parts.push(`riskTier=${verdict.riskTier}`);
+      if (verdict.reasons.length > 0) {
+        parts.push(`reasons=${formatLimited(verdict.reasons)}`);
+      }
+      if (verdict.diagnostics && verdict.diagnostics.length > 0) {
+        parts.push(
+          `diagnostics=${formatLimited(
+            verdict.diagnostics.map((diagnostic) => {
+              const approval = diagnostic.approval ? ` approval=${diagnostic.approval}` : "";
+              return `${diagnostic.source}/${diagnostic.rule}: ${diagnostic.message}${approval}`;
+            }),
+          )}`,
+        );
+      }
     }
     if (error.cause !== undefined) {
       parts.push(`cause=${getErrorMessage(error.cause)}`);
@@ -16,6 +33,38 @@ export function formatRunCaseError(error: unknown): string {
   }
 
   return getErrorMessage(error);
+}
+
+function isTraceGateRuntimeErrorLike(error: unknown): error is {
+  message: string;
+  toolName?: string;
+  verdict?: unknown;
+  cause?: unknown;
+} {
+  return (
+    error instanceof Error &&
+    (error.name.startsWith("TraceGate") || "verdict" in error || "toolName" in error)
+  );
+}
+
+function isPolicyVerdictLike(verdict: unknown): verdict is PolicyVerdict {
+  if (verdict === null || typeof verdict !== "object") {
+    return false;
+  }
+  const candidate = verdict as Partial<PolicyVerdict>;
+  return (
+    typeof candidate.status === "string" &&
+    Array.isArray(candidate.reasons) &&
+    candidate.reasons.every((reason) => typeof reason === "string") &&
+    typeof candidate.riskTier === "string" &&
+    typeof candidate.toolName === "string"
+  );
+}
+
+function formatLimited(values: string[]): string {
+  const shown = values.slice(0, DETAIL_LIMIT).join(" | ");
+  const suffix = values.length > DETAIL_LIMIT ? ` | +${values.length - DETAIL_LIMIT} more` : "";
+  return `${shown}${suffix}`;
 }
 
 export function getErrorMessage(error: unknown): string {

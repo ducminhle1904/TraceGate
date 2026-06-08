@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   assertNoSecretLikeValues,
   compareReplayExpectation,
+  createEvidenceRecord,
   createPolicyEvaluator,
   createReplayExpectation,
   createToolContractAdapter,
@@ -160,9 +161,36 @@ describe("tool contract manifest adapters", () => {
     expect(manifest.permissions).toEqual(["customer-email"]);
   });
 
+  it("supports static and functional manifest adapter fields without mutating metadata", () => {
+    const manifestMetadata = { registry: "generic-zod", internalRisk: manifest.internalRisk };
+    const adapter = createToolContractAdapter<InternalToolManifest, typeof EmailInputSchema>({
+      name: "staticNotifyCustomer",
+      description: "Static descriptor",
+      riskTier: (tool: InternalToolManifest) => tool.internalRisk,
+      riskMapping: { broker_write: "high" },
+      inputSchema: (tool: InternalToolManifest) => tool.schema,
+      requiresApproval: true,
+      requiredEvidence: ["static-approval"],
+      sideEffects: [{ kind: "email", external: true }],
+      metadata: () => manifestMetadata,
+    });
+
+    const contract = adapter(manifest, { metadata: { override: "kept" } });
+
+    expect(contract).toMatchObject({
+      name: "staticNotifyCustomer",
+      description: "Static descriptor",
+      riskTier: "high",
+      requiresApproval: true,
+      requiredEvidence: ["static-approval"],
+      metadata: { registry: "generic-zod", internalRisk: "broker_write", override: "kept" },
+    });
+    expect(manifestMetadata).toEqual({ registry: "generic-zod", internalRisk: "broker_write" });
+  });
+
   it("fails clearly for unknown custom risk tiers unless a fallback is explicit", () => {
     expect(() => mapRiskTier("broker_write", { safe: "read" })).toThrow(
-      'Unknown risk tier "broker_write"',
+      'Unknown risk tier "broker_write". Known mapped values: safe.',
     );
     expect(mapRiskTier("broker_write", { safe: "read" }, { fallback: "high" })).toBe("high");
   });
@@ -181,6 +209,13 @@ describe("evaluatePolicy", () => {
       status: "review",
       toolName: "issueRefund",
       riskTier: "high",
+      diagnostics: [
+        {
+          source: "contract",
+          rule: "approval-missing",
+          approval: "missing",
+        },
+      ],
     });
   });
 
@@ -188,6 +223,13 @@ describe("evaluatePolicy", () => {
     expect(evaluatePolicy({ contract: highRiskContract, approval: "denied" })).toMatchObject({
       status: "block",
       toolName: "issueRefund",
+      diagnostics: [
+        {
+          source: "contract",
+          rule: "approval-denied",
+          approval: "denied",
+        },
+      ],
     });
   });
 
@@ -292,6 +334,21 @@ describe("policy configuration", () => {
 
     expect(evaluator({ contract: readContract, approval: "denied" })).toMatchObject({
       status: "block",
+    });
+  });
+
+  it("exposes policy rule diagnostics for blocked risk tiers", () => {
+    const evaluator = createPolicyEvaluator(definePolicy({ blockRiskTiers: ["high"] }));
+
+    expect(evaluator({ contract: refundContract })).toMatchObject({
+      status: "block",
+      diagnostics: [
+        {
+          source: "policy",
+          rule: "blocked-risk-tier",
+          riskTier: "high",
+        },
+      ],
     });
   });
 
@@ -443,6 +500,22 @@ describe("trace, evidence, and matrix schemas", () => {
     ).toThrow();
     expect(() => MatrixCaseSchema.parse({ id: "case-1", prompt: "" })).toThrow();
   });
+
+  it("creates evidence records with an auto-filled timestamp", () => {
+    expect(
+      createEvidenceRecord(
+        {
+          id: "evidence-auto",
+          type: "system",
+          content: { signal: "ready" },
+        },
+        { now: () => "2026-06-08T00:00:00.000Z" },
+      ),
+    ).toMatchObject({
+      id: "evidence-auto",
+      timestamp: "2026-06-08T00:00:00.000Z",
+    });
+  });
 });
 
 describe("redactValue", () => {
@@ -520,6 +593,46 @@ describe("redactValue", () => {
       },
     ]);
     expect(detectSecretLikeValues({ token: "secret-token" }, { detect: false })).toEqual([]);
+  });
+
+  it("can ignore configured redaction placeholders on secret-like keys", () => {
+    const redacted = {
+      credentials: [
+        {
+          apiKey: "[REDACTED]",
+          password: "[redacted]",
+          authorization: "***",
+          cookie: "<hidden>",
+        },
+      ],
+      token: "raw-token",
+    };
+
+    expect(detectSecretLikeValues(redacted).map((finding) => finding.path)).toEqual([
+      "credentials[0].apiKey",
+      "credentials[0].password",
+      "credentials[0].authorization",
+      "credentials[0].cookie",
+      "token",
+    ]);
+    expect(
+      detectSecretLikeValues(redacted, {
+        ignoreRedactionPlaceholders: true,
+        redactionPlaceholders: ["<hidden>"],
+      }),
+    ).toEqual([
+      {
+        kind: "secret-key",
+        path: "token",
+        preview: "[secret-like:9]",
+      },
+    ]);
+    expect(() =>
+      assertNoSecretLikeValues(
+        { apiKey: "<hidden>" },
+        { ignoreRedactionPlaceholders: true, redactionPlaceholders: ["<hidden>"] },
+      ),
+    ).not.toThrow();
   });
 
   it("redacts segmented API keys", () => {
@@ -748,6 +861,79 @@ describe("replay fixtures", () => {
         expect.stringContaining("Unexpected: [extra]"),
         expect.stringContaining("Ignored: [meta.traceId]"),
         expect.stringContaining("Optional: [citations, meta.latencyMs]"),
+      ]),
+    );
+  });
+
+  it("supports absent output keys and path value assertions", () => {
+    const expected = createReplayExpectation(
+      {
+        output: {
+          answer: "ok",
+          metrics: { latencyMs: 12 },
+          redacted: "[REDACTED]",
+        },
+      },
+      {
+        outputKeysMode: "subset",
+        ignoredOutputKeys: ["metrics.latencyMs"],
+        absentOutputKeys: ["debug.rawSecret"],
+        outputValues: {
+          answer: "ok",
+          redacted: "[REDACTED]",
+        },
+      },
+    );
+
+    expect(
+      compareReplayExpectation(expected, {
+        output: {
+          answer: "ok",
+          metrics: { latencyMs: 99, tokens: 12 },
+          redacted: "[REDACTED]",
+          extra: true,
+        },
+      }).failures,
+    ).toEqual([]);
+    expect(
+      compareReplayExpectation(expected, {
+        output: {
+          answer: "changed",
+          redacted: "[REDACTED]",
+          debug: { rawSecret: "sk-secret" },
+        },
+      }).failures,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Expected output path "debug.rawSecret" to be absent'),
+        expect.stringContaining('Expected output path "answer" to equal "ok", got "changed"'),
+      ]),
+    );
+  });
+
+  it("supports dotted output assertions through array indexes", () => {
+    const expected = createReplayExpectation(
+      { output: { items: [{ id: "one", status: "ok" }] } },
+      {
+        outputKeysMode: "subset",
+        outputValues: { "items.0.id": "one" },
+        absentOutputKeys: ["items.0.secret"],
+      },
+    );
+
+    expect(
+      compareReplayExpectation(expected, {
+        output: { items: [{ id: "one", status: "ok" }] },
+      }).failures,
+    ).toEqual([]);
+    expect(
+      compareReplayExpectation(expected, {
+        output: { items: [{ id: "two", secret: "raw" }] },
+      }).failures,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Expected output path "items.0.secret" to be absent'),
+        expect.stringContaining('Expected output path "items.0.id" to equal "one", got "two"'),
       ]),
     );
   });

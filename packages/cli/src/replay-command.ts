@@ -234,6 +234,8 @@ function preserveReplayOutputPolicy(
     outputKeysMode: previous.outputKeysMode,
     ignoredOutputKeys: previous.ignoredOutputKeys,
     optionalOutputKeys: previous.optionalOutputKeys,
+    absentOutputKeys: previous.absentOutputKeys,
+    outputValues: previous.outputValues,
   };
 }
 

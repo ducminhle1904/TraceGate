@@ -9,11 +9,13 @@ It demonstrates:
 - Validation failure before a tool executor is called.
 - JSONL trace writing through `createJsonlFileTraceSink()`.
 - Default redaction of an `apiKey` input field.
+- Placeholder-aware redaction fixture checks for already-redacted traces.
 
 Run:
 
 ```bash
 pnpm --filter tracegate-example-core-workflow start
+pnpm --filter tracegate-example-core-workflow test:redaction
 ```
 
 Expected output:
@@ -23,4 +25,6 @@ Expected output:
 - `sideEffectExecutions: 0`
 - ordered TraceGate runtime events
 - `redacted: true`
+- `rawSecretFails: true`
+- `redactedPlaceholderPasses: true`
 - a local trace at `traces/core-workflow.jsonl`

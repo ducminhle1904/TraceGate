@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0
+
+- Added placeholder-aware secret detection options for redacted trace fixtures.
+- Added replay `absentOutputKeys` and `outputValues` assertions for stable path-level output checks.
+- Added `createEvidenceRecord()` for standalone evidence records with timestamp auto-fill.
+- Added structured policy diagnostics and approval-handler reason support while keeping existing verdict fields stable.
+- Improved manifest risk-tier mapping errors and CLI runtime failure diagnostics without changing JSON/JUnit report shapes.
+
 ## 0.0.3
 
 - Added generic contract adapter helpers for converting existing tool manifests into TraceGate contracts with custom risk-tier mapping.

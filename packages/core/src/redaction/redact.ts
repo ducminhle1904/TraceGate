@@ -28,11 +28,15 @@ const DEFAULT_SECRET_PATTERNS: Array<{ kind: SecretLeakKind; pattern: RegExp }> 
   { kind: "session-cookie", pattern: /\b(?:session|sid|cookie)[_=:-][A-Za-z0-9._~+/=-]{12,}\b/i },
 ];
 
+const DEFAULT_REDACTION_PLACEHOLDERS = new Set(["[REDACTED]", "[redacted]", "***"]);
+
 export interface RedactValueOptions {
   detect?: boolean;
+  ignoreRedactionPlaceholders?: boolean;
   keys?: string[];
   patterns?: RegExp[];
   preserveLength?: boolean;
+  redactionPlaceholders?: string[];
   replacement?: string;
   maxDepth?: number;
 }
@@ -91,10 +95,12 @@ export function detectSecretLikeValues(
   detectUnknown(value, {
     depth: 0,
     findings,
+    ignoreRedactionPlaceholders: options.ignoreRedactionPlaceholders === true,
     keys: buildSecretKeys(options),
     maxDepth: options.maxDepth ?? 8,
     path: "$",
     patterns: buildSecretPatterns(options),
+    redactionPlaceholders: buildRedactionPlaceholders(options),
   });
   return findings;
 }
@@ -120,10 +126,12 @@ interface RedactContext {
 interface DetectContext {
   depth: number;
   findings: SecretLeakFinding[];
+  ignoreRedactionPlaceholders: boolean;
   keys: Set<string>;
   maxDepth: number;
   path: string;
   patterns: Array<{ kind: SecretLeakKind; pattern: RegExp }>;
+  redactionPlaceholders: Set<string>;
 }
 
 function redactUnknown(value: unknown, context: RedactContext): unknown {
@@ -184,6 +192,12 @@ function detectUnknown(value: unknown, context: DetectContext): void {
     for (const [key, nestedValue] of Object.entries(value)) {
       const path = joinPath(context.path, key);
       if (context.keys.has(normalizeKey(key))) {
+        if (
+          context.ignoreRedactionPlaceholders &&
+          isRedactionPlaceholder(nestedValue, context.redactionPlaceholders)
+        ) {
+          continue;
+        }
         context.findings.push({ path, kind: "secret-key", preview: previewValue(nestedValue) });
         continue;
       }
@@ -247,6 +261,18 @@ function buildSecretKeys(options: RedactValueOptions): Set<string> {
   return options.keys === undefined || options.keys.length === 0
     ? DEFAULT_SECRET_KEYS
     : new Set([...DEFAULT_SECRET_KEYS, ...options.keys.map(normalizeKey)]);
+}
+
+function buildRedactionPlaceholders(options: RedactValueOptions): Set<string> {
+  return new Set([
+    ...DEFAULT_REDACTION_PLACEHOLDERS,
+    ...(options.replacement ? [options.replacement] : []),
+    ...(options.redactionPlaceholders ?? []),
+  ]);
+}
+
+function isRedactionPlaceholder(value: unknown, placeholders: Set<string>): boolean {
+  return typeof value === "string" && placeholders.has(value);
 }
 
 function joinPath(path: string, key: string): string {

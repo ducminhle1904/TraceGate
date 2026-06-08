@@ -6,7 +6,7 @@ import { EnvironmentSchema } from "../schema/surface.js";
 import type { RiskTier, ToolContract } from "../schema/tool-contract.js";
 import { RiskTierSchema, ToolNameSchema } from "../schema/tool-contract.js";
 import type { EvaluatePolicyInput } from "./evaluate-policy.js";
-import type { PolicyVerdict } from "./verdict.js";
+import type { PolicyDiagnostic, PolicyVerdict } from "./verdict.js";
 
 export interface PolicyConfig {
   requireApprovalForRiskTiers?: RiskTier[] | undefined;
@@ -43,15 +43,41 @@ export function createPolicyEvaluator(policy: PolicyConfig) {
     ];
 
     if (input.approval === "denied") {
-      return verdict(input.contract, "block", "Required approval was denied.");
+      return verdict(input.contract, "block", "Required approval was denied.", {
+        source: "policy",
+        rule: "approval-denied",
+        message: "Explicit denied approval blocks the tool call.",
+        riskTier: input.contract.riskTier,
+        approval: "denied",
+      });
     }
 
     if (includesRiskTier(effective.blockRiskTiers, input.contract.riskTier)) {
-      return verdict(input.contract, "block", `Risk tier "${input.contract.riskTier}" is blocked.`);
+      return verdict(
+        input.contract,
+        "block",
+        `Risk tier "${input.contract.riskTier}" is blocked.`,
+        {
+          source: "policy",
+          rule: "blocked-risk-tier",
+          message: `Policy blocks risk tier "${input.contract.riskTier}".`,
+          riskTier: input.contract.riskTier,
+        },
+      );
     }
 
     if (requiresApproval(effective, input.contract) && input.approval !== "approved") {
-      return verdict(input.contract, "review", "Required approval is missing.");
+      return verdict(input.contract, "review", "Required approval is missing.", {
+        source: input.contract.requiresApproval ? "contract" : "policy",
+        rule: input.contract.requiresApproval
+          ? "contract-requires-approval"
+          : "risk-tier-requires-approval",
+        message: input.contract.requiresApproval
+          ? "Tool contract requires approval before execution."
+          : `Policy requires approval for risk tier "${input.contract.riskTier}".`,
+        riskTier: input.contract.riskTier,
+        approval: input.approval ?? "missing",
+      });
     }
 
     const missingEvidence = missingRequiredEvidence(requiredEvidence, input.evidence ?? []);
@@ -60,10 +86,23 @@ export function createPolicyEvaluator(policy: PolicyConfig) {
         input.contract,
         "review",
         `Missing required evidence: ${missingEvidence.join(", ")}.`,
+        {
+          source: "policy",
+          rule: "missing-required-evidence",
+          message: `Missing required evidence: ${missingEvidence.join(", ")}.`,
+          riskTier: input.contract.riskTier,
+          evidenceIds: (input.evidence ?? []).map((record) => record.id),
+        },
       );
     }
 
-    return verdict(input.contract, "allow", "Policy requirements are satisfied.");
+    return verdict(input.contract, "allow", "Policy requirements are satisfied.", {
+      source: "policy",
+      rule: "policy-satisfied",
+      message: "Policy requirements are satisfied.",
+      riskTier: input.contract.riskTier,
+      ...(input.approval ? { approval: input.approval } : {}),
+    });
   };
 }
 
@@ -138,11 +177,13 @@ function verdict(
   contract: ToolContract,
   status: PolicyVerdict["status"],
   reason: string,
+  diagnostic: PolicyDiagnostic,
 ): PolicyVerdict {
   return {
     status,
     reasons: [reason],
     riskTier: contract.riskTier,
     toolName: contract.name,
+    diagnostics: [diagnostic],
   };
 }

@@ -59,7 +59,8 @@ const contract = fromManifest(internalToolManifest, {
 });
 ```
 
-Unknown risk tiers throw by default. Pass `fallbackRiskTier` only when an explicit fallback is safer than failing configuration.
+Unknown risk tiers throw by default with the unmapped value and known mapping keys. Pass
+`fallbackRiskTier` only when an explicit fallback is safer than failing configuration.
 
 ### `mapRiskTier(value, mapping, options)`
 
@@ -139,6 +140,9 @@ Fields:
 - `keys`: extra key names to redact.
 - `patterns`: extra regular expressions to redact from string values.
 - `detect`: set to `false` to disable value-pattern redaction.
+- `ignoreRedactionPlaceholders`: when true, detector/assertion helpers ignore secret-like keys whose
+  value is a known redaction placeholder.
+- `redactionPlaceholders`: additional placeholder strings such as `<hidden>`.
 - `preserveLength`: preserve matched string length when replacing value matches.
 - `replacement`: replacement string, defaults to `[REDACTED]`.
 - `maxDepth`: recursion limit, defaults to `8`.
@@ -160,6 +164,15 @@ Result:
 Detects common secret-like string values and reports stable findings with `path`, `kind`, and `preview`.
 
 `assertNoSecretLikeValues()` throws `TraceGateSecretLeakError` when findings exist.
+
+Use placeholder options when validating traces that are already redacted:
+
+```ts
+assertNoSecretLikeValues(trace, {
+  ignoreRedactionPlaceholders: true,
+  redactionPlaceholders: ["<hidden>"],
+});
+```
 
 ## Schemas And Types
 
@@ -187,6 +200,19 @@ Fields: `name`, `riskTier`, `inputSchema`, optional `description`, `requiresAppr
 
 Failing example: `{ "name": "1bad", "riskTier": "high" }`.
 
+### `createEvidenceRecord(input, options?)`
+
+Creates a standalone evidence record and fills `timestamp` when omitted.
+
+```ts
+createEvidenceRecord(
+  { id: "approval-1", type: "user-approval", content: { approvedBy: "manager" } },
+  { now: () => "2026-06-08T00:00:00.000Z" },
+);
+```
+
+`EvidenceRecordSchema` remains strict for persisted records and still requires `timestamp`.
+
 ### `EvidenceRecordSchema` / `EvidenceRecord`
 
 Validates evidence recorded during a run. Runtime `recordEvidence()` accepts the same fields but
@@ -197,7 +223,18 @@ boilerplate while traces still contain concrete timestamps.
 
 Represents the result of a policy check.
 
-Fields: `status`, `reasons`, `riskTier`, `toolName`.
+Fields: `status`, `reasons`, `riskTier`, `toolName`, and optional `diagnostics`.
+
+Diagnostics are structured hints for humans and tooling:
+
+```ts
+{
+  source: "policy",
+  rule: "blocked-risk-tier",
+  message: "Policy blocks risk tier \"high\".",
+  riskTier: "high"
+}
+```
 
 Failing example: `{ "status": "maybe", "reasons": [] }`.
 
