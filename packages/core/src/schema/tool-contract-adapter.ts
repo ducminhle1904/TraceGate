@@ -67,6 +67,22 @@ export interface ManifestContractAdapterConfig<
   getMetadata?: (manifest: TManifest) => JsonObject | undefined;
 }
 
+export type LooseManifestSchemaMap = Record<string, z.ZodTypeAny>;
+
+export interface LooseManifestContractAdapterConfig<TManifest> {
+  registry: readonly TManifest[] | Record<string, TManifest>;
+  schemas: LooseManifestSchemaMap;
+  riskMapping?: RiskTierMapping<TManifest>;
+  fallbackRiskTier?: RiskTier;
+  getName: (manifest: TManifest) => string;
+  getRiskTier: (manifest: TManifest) => unknown;
+  getDescription?: (manifest: TManifest) => string | undefined;
+  getApprovalRequirement?: (manifest: TManifest) => boolean | undefined;
+  getSideEffects?: (manifest: TManifest) => SideEffect[] | undefined;
+  getRequiredEvidence?: (manifest: TManifest) => string[] | undefined;
+  getMetadata?: (manifest: TManifest) => JsonObject | undefined;
+}
+
 export interface ManifestContractAdapter<
   _TManifest,
   TSchemaMap extends Record<string, z.ZodType<unknown>>,
@@ -154,6 +170,12 @@ export function createManifestContractAdapter<
       return Object.values(contracts);
     },
   };
+}
+
+export function createLooseManifestContractAdapter<TManifest>(
+  config: LooseManifestContractAdapterConfig<TManifest>,
+): ManifestContractAdapter<TManifest, LooseManifestSchemaMap> {
+  return createManifestContractAdapter<TManifest, LooseManifestSchemaMap>(config);
 }
 
 export function defineToolContractFromManifest<

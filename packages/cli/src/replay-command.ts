@@ -12,6 +12,7 @@ import {
   type ReplayFixture,
   ReplayFixtureSchema,
   summarizeReplaySource,
+  type TraceEvent,
 } from "@tracegate/core";
 
 import { evaluateMatrixAssertions } from "./assertions.js";
@@ -47,6 +48,7 @@ export async function runFixturesCommand(args: string[], io: CommandIo): Promise
       config: { type: "string", short: "c" },
       force: { type: "boolean" },
       out: { type: "string" },
+      "runtime-gate": { type: "boolean" },
     },
   });
   const tracePath = readRequiredPositional(positionals[0], "trace JSONL path");
@@ -56,6 +58,11 @@ export async function runFixturesCommand(args: string[], io: CommandIo): Promise
   const traceFilePath = resolve(io.cwd, tracePath);
   const outputPath = resolve(io.cwd, outPath);
   const events = await parseTraceJsonlStream(createReadStream(traceFilePath));
+  const runtimeGate = values["runtime-gate"] === true;
+  const expectation = createReplayExpectation(
+    { events },
+    runtimeGate && !hasRunFinishedEvent(events) ? { traceEventCountMode: "tool-boundary" } : {},
+  );
   const matrixCase = caseId
     ? await loadCaseFromConfig(io.cwd, configPath, caseId)
     : {
@@ -67,10 +74,14 @@ export async function runFixturesCommand(args: string[], io: CommandIo): Promise
     version: "1",
     id: matrixCase.id,
     case: matrixCase,
-    captured: summarizeReplaySource({ events }),
-    expect: createReplayExpectation({ events }),
+    captured: {
+      ...summarizeReplaySource({ events }),
+      traceEventCount: expectation.traceEventCount,
+    },
+    expect: expectation,
     metadata: {
       source: tracePath,
+      ...(runtimeGate ? { sourceKind: "runtime-gate" } : {}),
     },
   });
 
@@ -187,6 +198,67 @@ export async function runReplayCommand(args: string[], io: CommandIo): Promise<n
     failures,
     traceEventCount,
     ...(outputSummary ? { outputSummary } : {}),
+    ...(runId ? { runId } : {}),
+  };
+  const report = createMatrixReport({
+    startedAt,
+    finishedAt: now(io),
+    cases: [caseResult],
+  });
+
+  if (junitPath) {
+    await writeJunitReport(report, resolve(io.cwd, junitPath));
+  }
+
+  if (values.json) {
+    write(io.stdout, `${JSON.stringify(report, null, 2)}\n`);
+  } else {
+    write(io.stdout, formatConsoleReport(report));
+  }
+
+  return report.status === "passed" ? 0 : 1;
+}
+
+export async function runReplayRuntimeCommand(args: string[], io: CommandIo): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      json: { type: "boolean" },
+      junit: { type: "string" },
+      trace: { type: "string" },
+    },
+  });
+  const fixturePath = readRequiredPositional(positionals[0], "runtime replay fixture path");
+  const tracePath = readRequiredString(values.trace, "--trace");
+  const junitPath = readOptionalString(values.junit, "--junit");
+  const startedAt = now(io);
+  const caseStartedAt = now(io);
+  const fixtureFilePath = resolve(io.cwd, fixturePath);
+  const traceFilePath = resolve(io.cwd, tracePath);
+  const fixture = await loadReplayFixture(fixtureFilePath);
+  const events = await parseTraceJsonlStream(createReadStream(traceFilePath));
+  const comparison = compareReplayExpectation(fixture.expect, { events });
+  const failures = [...comparison.failures];
+
+  if (failures.length > 0) {
+    failures.unshift(
+      `Runtime-gate replay compared "${fixture.id}" using ${fixture.expect.traceEventCountMode} trace event count mode.`,
+    );
+    if (fixture.expect.traceEventCountMode === "tool-boundary" && !hasRunFinishedEvent(events)) {
+      failures.push(
+        "Runtime-gate boundary trace has no run.finished event; run lifecycle comparison was intentionally skipped unless the fixture expects runStatus.",
+      );
+    }
+  }
+
+  const runId = summarizeReplaySource({ events }).runId;
+  const caseResult: MatrixCaseResult = {
+    id: fixture.id,
+    status: failures.length > 0 ? "failed" : "passed",
+    durationMs: now(io).getTime() - caseStartedAt.getTime(),
+    failures,
+    traceEventCount: comparison.actual.traceEventCount,
     ...(runId ? { runId } : {}),
   };
   const report = createMatrixReport({
@@ -333,4 +405,8 @@ function write(stream: Pick<NodeJS.WritableStream, "write">, value: string): voi
 
 function now(io: CommandIo): Date {
   return io.now?.() ?? new Date();
+}
+
+function hasRunFinishedEvent(events: TraceEvent[]): boolean {
+  return events.some((event) => event.type === "run.finished");
 }

@@ -131,6 +131,12 @@ Create a fixture from a JSONL trace:
 tracegate fixtures create traces/blocked-email.jsonl --out fixtures/blocked-email.ts
 ```
 
+Create a runtime-gate fixture from boundary events:
+
+```bash
+tracegate fixtures create traces/runtime-gate.jsonl --runtime-gate --out fixtures/runtime-gate.ts
+```
+
 Create a fixture using an existing matrix case from `tracegate.config.ts`:
 
 ```bash
@@ -144,6 +150,19 @@ tracegate replay fixtures/blocked-email.ts
 tracegate replay fixtures/blocked-email.ts --json
 tracegate replay fixtures/blocked-email.ts --junit tracegate-replay.xml
 ```
+
+Replay a runtime-gate JSONL trace without loading `tracegate.config.ts`:
+
+```bash
+tracegate replay-runtime fixtures/runtime-gate.ts --trace traces/current-runtime-gate.jsonl
+tracegate replay-runtime fixtures/runtime-gate.ts --trace traces/current-runtime-gate.jsonl --json
+tracegate replay-runtime fixtures/runtime-gate.ts --trace traces/current-runtime-gate.jsonl --junit tracegate-runtime-replay.xml
+```
+
+Runtime-gate fixtures created from default boundary traces use
+`traceEventCountMode: "tool-boundary"`. That compares ordered `tool.*` events and ignores the
+absence of `run.started` / `run.finished`. Fixtures captured with `traceRunEvents: true` keep
+the normal exact event-count behavior.
 
 Refresh fixture expectations from current behavior:
 

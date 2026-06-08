@@ -44,6 +44,7 @@ export type {
   ReplayFixtureInput,
   ReplayOutputKeysMode,
   ReplaySource,
+  ReplayTraceEventCountMode,
   ReplayTraceSummary,
   TraceJsonlChunk,
 } from "./replay/replay-fixture.js";
@@ -56,6 +57,7 @@ export {
   ReplayExpectationSchema,
   ReplayFixtureSchema,
   ReplayOutputKeysModeSchema,
+  ReplayTraceEventCountModeSchema,
   ReplayTraceSummarySchema,
   summarizeReplaySource,
 } from "./replay/replay-fixture.js";
@@ -143,6 +145,8 @@ export {
   ToolNameSchema,
 } from "./schema/tool-contract.js";
 export type {
+  LooseManifestContractAdapterConfig,
+  LooseManifestSchemaMap,
   ManifestContractAdapter,
   ManifestContractAdapterConfig,
   MapRiskTierOptions,
@@ -153,6 +157,7 @@ export type {
   ToolManifestValue,
 } from "./schema/tool-contract-adapter.js";
 export {
+  createLooseManifestContractAdapter,
   createManifestContractAdapter,
   createToolContractAdapter,
   defineToolContractFromManifest,

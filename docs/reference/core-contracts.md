@@ -104,6 +104,34 @@ const adapter = createManifestContractAdapter({
 const contract = adapter.getContract("placeOrder");
 ```
 
+Use `createLooseManifestContractAdapter()` for complex registry types where the schema map is
+available as `Record<string, z.ZodTypeAny>` and the strict adapter would force consumer-side casts:
+
+```ts
+const looseAdapter = createLooseManifestContractAdapter({
+  registry,
+  schemas,
+  getName: (tool) => tool.name,
+  getRiskTier: (tool) => tool.policy.riskTier,
+  riskMapping: {
+    read: "read",
+    draft: "medium",
+    canvas_mutation: "medium",
+    persisted_write: "medium",
+    trading_action: "high",
+    admin_action: "critical",
+  },
+  getRequiredEvidence: (tool) => [tool.policy.permission],
+  getMetadata: (tool) => ({
+    repoRiskTier: tool.policy.riskTier,
+    executionLocation: tool.executionLocation,
+  }),
+});
+```
+
+TraceGate risk tiers remain canonical for policy evaluation. Preserve the original host risk tier
+in metadata when operators need both values in runtime summaries.
+
 Failing example:
 
 ```ts

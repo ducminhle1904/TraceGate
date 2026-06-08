@@ -15,6 +15,7 @@ import {
   createStructuredLoggerTraceSink,
   definePolicy,
   defineToolContract,
+  type RuntimeGateSummary,
   type TraceEvent,
   TraceGateInputValidationError,
   TraceGatePolicyBlockedError,
@@ -61,6 +62,80 @@ describe("runtime gate helper", () => {
     await expect(lookup({ orderId: "" })).resolves.toEqual({ ok: true });
     expect(executed).toBe(true);
     expect(summaries).toMatchObject([{ validationFailed: true, handlerExecuted: true }]);
+  });
+
+  it("keeps runtime gate traces tool-boundary only by default", async () => {
+    const traceSink = createMemoryTraceSink();
+    const gate = createRuntimeGate({ mode: "observe", traceSink });
+    const lookup = gate.wrapTool(lookupOrderContract, async (input) => ({ id: input.orderId }));
+
+    await expect(lookup({ orderId: "order-1" })).resolves.toEqual({ id: "order-1" });
+
+    expect(traceSink.events.map((event) => event.type)).toEqual(["tool.started", "tool.succeeded"]);
+  });
+
+  it("can emit harness-like run events around successful runtime gate calls", async () => {
+    const traceSink = createMemoryTraceSink();
+    const summaries: RuntimeGateSummary[] = [];
+    const contract = defineToolContract({
+      name: "lookupOrder",
+      riskTier: "read",
+      inputSchema: LookupInputSchema,
+      metadata: {
+        repoRiskTier: "read",
+        apiKey: "sk-proj-1234567890abcdef1234567890abcdef",
+      },
+    });
+    const gate = createRuntimeGate({
+      mode: "observe",
+      traceRunEvents: true,
+      traceSink,
+      context: {
+        sessionId: "session-1",
+        metadata: {
+          toolCallId: "host-call-1",
+          token: "Bearer abcdefghijklmnop",
+        },
+      },
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+    const lookup = gate.wrapTool(contract, async (input) => ({ id: input.orderId }));
+
+    await expect(lookup({ orderId: "order-1" })).resolves.toEqual({ id: "order-1" });
+
+    expect(traceSink.events.map((event) => event.type)).toEqual([
+      "run.started",
+      "tool.started",
+      "tool.succeeded",
+      "run.finished",
+    ]);
+    expect(traceSink.events.at(-1)).toMatchObject({
+      type: "run.finished",
+      run: {
+        toolCalls: [
+          { status: "started", toolName: "lookupOrder" },
+          { status: "succeeded", toolName: "lookupOrder" },
+        ],
+      },
+    });
+    expect(summaries[0]).toMatchObject({
+      traceEventTypes: ["run.started", "tool.started", "tool.succeeded", "run.finished"],
+      traceEventCount: 4,
+      context: {
+        metadata: {
+          toolCallId: "host-call-1",
+          token: "[REDACTED]",
+        },
+      },
+      contractMetadata: {
+        repoRiskTier: "read",
+        apiKey: "[REDACTED]",
+      },
+    });
+    expect(summaries[0]?.runId).toEqual(expect.stringMatching(/^run_/));
+    expect(summaries[0]?.toolCallId).toEqual(expect.stringMatching(/^tool_/));
   });
 
   it("bypasses validation and tracing for tools outside the allowlist", async () => {
@@ -113,6 +188,32 @@ describe("runtime gate helper", () => {
       executed: false,
     });
     expect(executed).toBe(false);
+  });
+
+  it("can emit harness-like run events around blocked runtime gate calls", async () => {
+    const traceSink = createMemoryTraceSink();
+    const summaries: RuntimeGateSummary[] = [];
+    const gate = createRuntimeGate({
+      mode: "enforce",
+      traceRunEvents: true,
+      traceSink,
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+    const lookup = gate.wrapTool(lookupOrderContract, async () => ({ ok: true }));
+
+    await expect(lookup({ orderId: "" })).rejects.toBeInstanceOf(TraceGateInputValidationError);
+
+    expect(traceSink.events.map((event) => event.type)).toEqual([
+      "run.started",
+      "tool.blocked",
+      "run.finished",
+    ]);
+    expect(summaries[0]).toMatchObject({
+      traceEventTypes: ["run.started", "tool.blocked", "run.finished"],
+      toolCallId: expect.stringMatching(/^tool_/),
+    });
   });
 
   it("blocks denied approval with the same diagnostics as the harness path", async () => {

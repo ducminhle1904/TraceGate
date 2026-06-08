@@ -45,6 +45,13 @@ const gate = createRuntimeGate({
         finalVerdict: summary.finalVerdict?.status,
         diagnostics: summary.diagnostics.map((item) => item.rule),
         handlerExecuted: summary.handlerExecuted,
+        toolExecuted: summary.handlerExecuted,
+        runId: summary.runId,
+        toolCallId: summary.toolCallId,
+        hostToolCallId: summary.context?.metadata?.toolCallId,
+        episodeId: summary.context?.metadata?.episodeId,
+        policyDecisionId: summary.context?.metadata?.policyDecisionId,
+        repoRiskTier: summary.contractMetadata?.repoRiskTier,
         secretLeakFindingCount: summary.secretLeakFindingCount,
       },
       "tracegate.summary",
@@ -63,13 +70,47 @@ const contract = defineToolContractFromManifest(manifest, {
   },
   inputSchema: (tool) => schemaByToolName[tool.name],
   requiredEvidence: (tool) => [tool.policy.permission],
+  metadata: (tool) => ({
+    repoRiskTier: tool.policy.riskTier,
+    permission: tool.policy.permission,
+    executionLocation: tool.executionLocation,
+  }),
 });
 
 export const guardedHandler = gate.wrapTool(contract, existingHandler);
 ```
 
-`createStructuredLoggerTraceSink()` receives already-redacted `TraceEvent` objects. It is a
-small adapter for production loggers, not a hosted exporter.
+Runtime gate traces are tool-boundary traces by default. A successful call emits
+`tool.started -> tool.succeeded`; a blocked call emits `tool.blocked`. This differs from
+`createHarness()`, which owns the whole run lifecycle and emits `run.started` and
+`run.finished` around tool events.
+
+If the host app wants harness-like traces for local replay or evidence artifacts, opt in:
+
+```ts
+const gate = createRuntimeGate({
+  mode: "observe",
+  traceRunEvents: true,
+  context: {
+    sessionId,
+    userId,
+    metadata: {
+      toolCallId,
+      episodeId,
+      policyDecisionId,
+    },
+  },
+});
+```
+
+With `traceRunEvents: true`, a successful runtime gate call emits
+`run.started -> tool.started -> tool.succeeded -> run.finished`, and blocked calls emit
+`run.started -> tool.blocked -> run.finished`. The summary includes `runId`, `toolCallId`,
+redacted `context`, and redacted `contractMetadata`.
+
+`createStructuredLoggerTraceSink()` receives already-redacted `TraceEvent` objects because
+redaction happens before the runtime gate writes to the sink. It is a small adapter for
+production loggers, not a hosted exporter.
 
 ## Shadow Comparison
 
@@ -92,6 +133,18 @@ const gate = createRuntimeGate({
 CI probes that want a compact summary. Generated ids, timestamps, and durations are not part
 of the comparison.
 
+```ts
+const comparisons = runtimeSummaries.flatMap((summary) =>
+  summary.shadowComparison ? [summary.shadowComparison] : [],
+);
+
+console.table(summarizePolicyComparisons(comparisons));
+```
+
+The summary keys include tool, TraceGate risk tier, and classification. Useful classifications
+include `runtime_allow_tracegate_block`, `runtime_block_tracegate_allow`, and
+`approval_diagnostics_missing`.
+
 In `shadow` mode, TraceGate starts its policy evaluation and the host
 `runtimeVerdictEvaluator` concurrently. Keep `runtimeVerdictEvaluator` observational and
 side-effect-light; business authorization and audit writes should stay in the host runtime.
@@ -113,6 +166,34 @@ runtime:execution-skipped
 ```
 
 Use replay fixtures to lock that behavior before enabling `enforce` for side-effecting tools.
+
+## Production Sinks And Replay Boundaries
+
+Use JSONL sinks for local development and CI artifacts by default. In staging or production,
+prefer `createStructuredLoggerTraceSink()` wired to your existing logger. The logger sink
+receives events after TraceGate has redacted configured keys and common secret-like values.
+If you run secret leakage checks on production traces, run them against the post-redaction
+event payload.
+
+Runtime gate JSONL is boundary-event data. It can be parsed as normal `TraceEvent` rows, but
+absence of `run.started` and `run.finished` is expected unless `traceRunEvents: true` was
+enabled.
+
+Create a fixture from a runtime-gate trace:
+
+```bash
+tracegate fixtures create traces/runtime-gate.jsonl --runtime-gate --out fixtures/runtime-gate.ts
+```
+
+Replay a new runtime-gate trace against that fixture without loading `tracegate.config.ts`:
+
+```bash
+tracegate replay-runtime fixtures/runtime-gate.ts --trace traces/current-runtime-gate.jsonl
+```
+
+Default runtime-gate fixtures use `traceEventCountMode: "tool-boundary"`, which compares
+ordered `tool.*` events and ignores missing run lifecycle events. If `traceRunEvents: true`
+was enabled during capture, fixtures can keep exact full-run event counts.
 
 ## Error Adapter
 

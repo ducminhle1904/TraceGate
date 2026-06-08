@@ -5,6 +5,7 @@ import {
   assertNoSecretLikeValues,
   compareReplayExpectation,
   createEvidenceRecord,
+  createLooseManifestContractAdapter,
   createPolicyEvaluator,
   createReplayExpectation,
   createToolContractAdapter,
@@ -193,6 +194,79 @@ describe("tool contract manifest adapters", () => {
       'Unknown risk tier "broker_write". Known mapped values: safe.',
     );
     expect(mapRiskTier("broker_write", { safe: "read" }, { fallback: "high" })).toBe("high");
+  });
+
+  it("builds contracts from loose schema maps for complex registries", () => {
+    type RegistryManifest = {
+      name: string;
+      description: string;
+      policy: {
+        riskTier:
+          | "read"
+          | "draft"
+          | "canvas_mutation"
+          | "persisted_write"
+          | "trading_action"
+          | "admin_action";
+        permission: string;
+      };
+      executionLocation: "client" | "server";
+    };
+    const registry: RegistryManifest[] = [
+      {
+        name: "placeOrder",
+        description: "Place an order through the broker",
+        policy: { riskTier: "trading_action", permission: "broker:trade" },
+        executionLocation: "server",
+      },
+    ];
+    const schemas: Record<string, z.ZodTypeAny> = {
+      placeOrder: z.object({ symbol: z.string(), size: z.number().positive() }),
+    };
+
+    const adapter = createLooseManifestContractAdapter({
+      registry,
+      schemas,
+      getName: (tool) => tool.name,
+      getDescription: (tool) => tool.description,
+      getRiskTier: (tool) => tool.policy.riskTier,
+      riskMapping: {
+        read: "read",
+        draft: "medium",
+        canvas_mutation: "medium",
+        persisted_write: "medium",
+        trading_action: "high",
+        admin_action: "critical",
+      },
+      getApprovalRequirement: (tool) => tool.policy.riskTier === "trading_action",
+      getRequiredEvidence: (tool) => [tool.policy.permission],
+      getMetadata: (tool) => ({
+        repoRiskTier: tool.policy.riskTier,
+        executionLocation: tool.executionLocation,
+      }),
+    });
+
+    expect(adapter.getContract("placeOrder")).toMatchObject({
+      name: "placeOrder",
+      riskTier: "high",
+      requiresApproval: true,
+      requiredEvidence: ["broker:trade"],
+      metadata: {
+        repoRiskTier: "trading_action",
+        executionLocation: "server",
+      },
+    });
+  });
+
+  it("fails clearly when a loose manifest adapter schema is missing", () => {
+    expect(() =>
+      createLooseManifestContractAdapter({
+        registry: [{ name: "missingSchema", risk: "read" }],
+        schemas: {},
+        getName: (tool) => tool.name,
+        getRiskTier: (tool) => tool.risk,
+      }),
+    ).toThrow('Missing input schema for tool manifest "missingSchema".');
   });
 });
 
@@ -934,6 +1008,73 @@ describe("replay fixtures", () => {
       expect.arrayContaining([
         expect.stringContaining('Expected output path "items.0.secret" to be absent'),
         expect.stringContaining('Expected output path "items.0.id" to equal "one", got "two"'),
+      ]),
+    );
+  });
+
+  it("supports runtime-gate tool-boundary trace event count mode", () => {
+    const started = toolEvent;
+    const succeeded = {
+      ...toolEvent,
+      sequence: 2,
+      type: "tool.succeeded",
+      record: {
+        ...toolEvent.record,
+        id: "tool-2",
+        status: "succeeded",
+      },
+    };
+    const events = parseTraceJsonl(`${JSON.stringify(started)}\n${JSON.stringify(succeeded)}\n`);
+    const expected = createReplayExpectation({ events }, { traceEventCountMode: "tool-boundary" });
+
+    expect(expected).toMatchObject({
+      toolSequence: ["sendEmail"],
+      toolStatuses: { sendEmail: ["started", "succeeded"] },
+      traceEventCount: 2,
+      traceEventCountMode: "tool-boundary",
+    });
+    expect(compareReplayExpectation(expected, { events }).failures).toEqual([]);
+  });
+
+  it("reports runtime-gate boundary replay drift clearly", () => {
+    const expectedEvents = parseTraceJsonl(`${JSON.stringify(toolEvent)}\n`);
+    const actualEvent = {
+      ...toolEvent,
+      record: {
+        ...toolEvent.record,
+        toolName: "lookupOrder",
+        status: "blocked",
+        policyVerdict: {
+          status: "block",
+          reasons: ["blocked"],
+          riskTier: "high",
+          toolName: "lookupOrder",
+        },
+      },
+    };
+    const actualStartedEvent = {
+      ...toolEvent,
+      sequence: 2,
+      record: {
+        ...toolEvent.record,
+        id: "tool-2",
+        toolName: "lookupOrder",
+      },
+    };
+    const actualEvents = parseTraceJsonl(
+      `${JSON.stringify(actualEvent)}\n${JSON.stringify(actualStartedEvent)}\n`,
+    );
+    const expected = createReplayExpectation(
+      { events: expectedEvents },
+      { traceEventCountMode: "tool-boundary" },
+    );
+
+    expect(compareReplayExpectation(expected, { events: actualEvents }).failures).toEqual(
+      expect.arrayContaining([
+        "Expected tool sequence [sendEmail], got [lookupOrder, lookupOrder].",
+        'Expected tool statuses for "lookupOrder" [], got [blocked, started].',
+        'Expected policy verdicts for "lookupOrder" [], got [block, review].',
+        "Expected 1 tool-boundary trace events from fixture, got 2 current tool-boundary trace events. Trace event count mode: tool-boundary.",
       ]),
     );
   });

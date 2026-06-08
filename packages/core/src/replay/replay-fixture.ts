@@ -27,6 +27,10 @@ export const ReplayOutputKeysModeSchema = z.enum(["exact", "subset"]);
 
 export type ReplayOutputKeysMode = z.infer<typeof ReplayOutputKeysModeSchema>;
 
+export const ReplayTraceEventCountModeSchema = z.enum(["exact", "tool-boundary"]);
+
+export type ReplayTraceEventCountMode = z.infer<typeof ReplayTraceEventCountModeSchema>;
+
 export const ReplayExpectationSchema = z
   .object({
     toolSequence: z.array(ToolNameSchema).default([]),
@@ -41,6 +45,7 @@ export const ReplayExpectationSchema = z
     absentOutputKeys: z.array(z.string().min(1)).default([]),
     outputValues: z.record(z.string().min(1), JsonValueSchema).default({}),
     traceEventCount: z.number().int().nonnegative().default(0),
+    traceEventCountMode: ReplayTraceEventCountModeSchema.default("exact"),
   })
   .strict();
 
@@ -96,6 +101,7 @@ export interface CreateReplayExpectationOptions {
   optionalOutputKeys?: string[];
   absentOutputKeys?: string[];
   outputValues?: Record<string, JsonValue>;
+  traceEventCountMode?: ReplayTraceEventCountMode;
 }
 
 export type TraceJsonlChunk = string | Uint8Array;
@@ -187,7 +193,8 @@ export function createReplayExpectation(
     ...(run?.status ? { runStatus: run.status } : {}),
     outputKeys: collectOutputKeys(source.output),
     ...options,
-    traceEventCount: events.length,
+    traceEventCount:
+      options.traceEventCountMode === "tool-boundary" ? toolEvents.length : events.length,
   });
 }
 
@@ -195,7 +202,9 @@ export function compareReplayExpectation(
   expected: ReplayExpectation,
   source: ReplaySource,
 ): ReplayComparisonResult {
-  const actual = createReplayExpectation(source);
+  const actual = createReplayExpectation(source, {
+    traceEventCountMode: expected.traceEventCountMode,
+  });
   const failures: string[] = [];
 
   compareArray("tool sequence", expected.toolSequence, actual.toolSequence, failures);
@@ -211,10 +220,21 @@ export function compareReplayExpectation(
     );
   }
 
-  if (source.events !== undefined && actual.traceEventCount !== expected.traceEventCount) {
-    failures.push(
-      `Expected ${expected.traceEventCount} trace events from fixture, got ${actual.traceEventCount} current events.`,
-    );
+  if (source.events !== undefined) {
+    const actualTraceEventCount =
+      expected.traceEventCountMode === "tool-boundary"
+        ? source.events.filter(isToolEvent).length
+        : source.events.length;
+    const modeDescription =
+      expected.traceEventCountMode === "tool-boundary"
+        ? "tool-boundary trace events"
+        : "trace events";
+
+    if (actualTraceEventCount !== expected.traceEventCount) {
+      failures.push(
+        `Expected ${expected.traceEventCount} ${modeDescription} from fixture, got ${actualTraceEventCount} current ${modeDescription}. Trace event count mode: ${expected.traceEventCountMode}.`,
+      );
+    }
   }
 
   return { failures, actual };

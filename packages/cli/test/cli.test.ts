@@ -656,6 +656,42 @@ export default {
     });
   });
 
+  it("creates runtime-gate replay fixtures from tool-boundary JSONL traces", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "runtime-gate.jsonl"),
+        `${toolEvent("tool.started", "started", "sendEmail", {}, "review")}\n${toolEvent(
+          "tool.succeeded",
+          "succeeded",
+          "sendEmail",
+          {},
+          "allow",
+        )}\n`,
+        "utf8",
+      );
+
+      const io = createIo(cwd);
+      await expect(
+        runCli(
+          [
+            "fixtures",
+            "create",
+            "runtime-gate.jsonl",
+            "--runtime-gate",
+            "--out",
+            "fixtures/runtime-gate.ts",
+          ],
+          io,
+        ),
+      ).resolves.toBe(0);
+
+      const fixture = await readFile(join(cwd, "fixtures/runtime-gate.ts"), "utf8");
+      expect(fixture).toContain('"sourceKind": "runtime-gate"');
+      expect(fixture).toContain('"traceEventCountMode": "tool-boundary"');
+      expect(fixture).toContain('"traceEventCount": 2');
+    });
+  });
+
   it("replays a fixture and writes JSON and JUnit reports", async () => {
     await withTempDir(async (cwd) => {
       await writeConfig(
@@ -689,6 +725,94 @@ export default {
       await expect(readFile(join(cwd, "replay.xml"), "utf8")).resolves.toContain(
         '<testcase classname="TraceGate.Matrix" name="replay-pass"',
       );
+    });
+  });
+
+  it("replays runtime-gate JSONL traces without loading project config", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "fixture.ts"),
+        replayFixtureModule({
+          expect: {
+            toolSequence: ["sendEmail"],
+            toolStatuses: { sendEmail: ["started", "succeeded"] },
+            policyVerdicts: { sendEmail: ["review", "allow"] },
+            evidence: [],
+            outputKeys: [],
+            traceEventCount: 2,
+            traceEventCountMode: "tool-boundary",
+          },
+          captured: {
+            traceEventCount: 2,
+          },
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(cwd, "current.jsonl"),
+        `${toolEvent("tool.started", "started", "sendEmail", {}, "review")}\n${toolEvent(
+          "tool.succeeded",
+          "succeeded",
+          "sendEmail",
+          {},
+          "allow",
+        )}\n`,
+        "utf8",
+      );
+
+      const io = createIo(cwd);
+      await expect(
+        runCli(["replay-runtime", "fixture.ts", "--trace", "current.jsonl", "--json"], io),
+      ).resolves.toBe(0);
+
+      const report = JSON.parse(io.stdoutText());
+      expect(report).toMatchObject({
+        status: "passed",
+        cases: [{ id: "replay-pass", status: "passed", traceEventCount: 2 }],
+      });
+    });
+  });
+
+  it("reports runtime-gate replay drift with boundary mode diagnostics", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "fixture.ts"),
+        replayFixtureModule({
+          expect: {
+            toolSequence: ["sendEmail"],
+            toolStatuses: { sendEmail: ["started", "succeeded"] },
+            policyVerdicts: { sendEmail: ["review", "allow"] },
+            evidence: [],
+            outputKeys: [],
+            traceEventCount: 2,
+            traceEventCountMode: "tool-boundary",
+          },
+          captured: {
+            traceEventCount: 2,
+          },
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(cwd, "current.jsonl"),
+        `${toolEvent("tool.blocked", "blocked", "lookupOrder", {}, "block")}\n`,
+        "utf8",
+      );
+
+      const io = createIo(cwd);
+      await expect(
+        runCli(["replay-runtime", "fixture.ts", "--trace", "current.jsonl"], io),
+      ).resolves.toBe(1);
+
+      expect(io.stdoutText()).toContain(
+        'Runtime-gate replay compared "replay-pass" using tool-boundary trace event count mode.',
+      );
+      expect(io.stdoutText()).toContain("Expected tool sequence [sendEmail], got [].");
+      expect(io.stdoutText()).toContain(
+        'Expected tool statuses for "lookupOrder" [], got [blocked].',
+      );
+      expect(io.stdoutText()).toContain("Trace event count mode: tool-boundary.");
+      expect(io.stdoutText()).toContain("has no run.finished event");
     });
   });
 

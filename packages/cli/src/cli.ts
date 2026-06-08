@@ -9,7 +9,7 @@ import { evaluateMatrixAssertions } from "./assertions.js";
 import type { TraceGateConfig, TraceGateRunnerResult } from "./config.js";
 import { DEFAULT_CONFIG_FILE, loadTraceGateConfig } from "./config-loader.js";
 import { formatRunCaseError, getErrorMessage, isNodeError } from "./errors.js";
-import { runFixturesCommand, runReplayCommand } from "./replay-command.js";
+import { runFixturesCommand, runReplayCommand, runReplayRuntimeCommand } from "./replay-command.js";
 import {
   createMatrixReport,
   formatConsoleReport,
@@ -42,6 +42,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return await runFixturesCommand(args, io);
       case "replay":
         return await runReplayCommand(args, io);
+      case "replay-runtime":
+        return await runReplayRuntimeCommand(args, io);
       case "--help":
       case "-h":
       case "help":
@@ -334,8 +336,9 @@ function helpText(): string {
     "Commands:",
     "  tracegate init [--config tracegate.config.ts]",
     "  tracegate test [--case id] [--policy] [--concurrency n] [--json] [--junit path] [--config path]",
-    "  tracegate fixtures create <trace.jsonl> --out <fixture.ts> [--case id] [--config path] [--force]",
+    "  tracegate fixtures create <trace.jsonl> --out <fixture.ts> [--runtime-gate] [--case id] [--config path] [--force]",
     "  tracegate replay <fixture.ts> [--config path] [--json] [--junit path] [--update]",
+    "  tracegate replay-runtime <fixture.ts> --trace <trace.jsonl> [--json] [--junit path]",
     "  tracegate doctor [--config path]",
     "",
   ].join("\n");

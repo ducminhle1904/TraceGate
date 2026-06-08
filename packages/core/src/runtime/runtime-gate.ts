@@ -9,8 +9,9 @@ import {
 } from "../redaction/redact.js";
 import type { JsonObject, JsonValue } from "../schema/json.js";
 import type { HarnessContext } from "../schema/surface.js";
+import { HarnessContextSchema } from "../schema/surface.js";
 import type { RiskTier, ToolContract } from "../schema/tool-contract.js";
-import type { ToolCallRecord, ToolCallStatus } from "../schema/trace.js";
+import type { ToolCallRecord, ToolCallStatus, TraceGateRunStatus } from "../schema/trace.js";
 import { appendPolicyDiagnostic, resolvePolicyVerdictAfterReview } from "./approval-resolution.js";
 import {
   TraceGateInputValidationError,
@@ -19,10 +20,19 @@ import {
   TraceGateToolExecutionError,
 } from "./errors.js";
 import type { ApprovalHandler, PolicyEvaluator } from "./harness.js";
-import { createId, createToolCallRecord, toJsonValue } from "./tool-record.js";
-import type { ToolTraceEvent, TraceEvent, TraceSink } from "./trace-sink.js";
+import {
+  createId,
+  createToolCallRecord,
+  nowIso,
+  toJsonObject,
+  toJsonValue,
+} from "./tool-record.js";
+import type { RunTraceEvent, ToolTraceEvent, TraceEvent, TraceSink } from "./trace-sink.js";
 
 export type RuntimeGateMode = "off" | "observe" | "shadow" | "enforce";
+type RuntimeGateTraceEventInput =
+  | Omit<RunTraceEvent, "sequence">
+  | Omit<ToolTraceEvent, "sequence">;
 
 export interface RuntimeGateEnforcementOptions {
   validationOnly?: boolean;
@@ -46,11 +56,15 @@ export interface PolicyComparisonResult {
 
 export interface RuntimeGateSummary {
   mode: RuntimeGateMode;
+  runId?: string | undefined;
+  toolCallId?: string | undefined;
   toolName: string;
   riskTier: RiskTier;
   status: "executed" | "blocked" | "failed" | "skipped";
   handlerExecuted: boolean;
   validationFailed: boolean;
+  context?: HarnessContext | undefined;
+  contractMetadata?: JsonObject | undefined;
   finalVerdict?: PolicyVerdict;
   diagnostics: PolicyDiagnostic[];
   traceEventTypes: TraceEvent["type"][];
@@ -78,6 +92,7 @@ export interface RuntimeGateOptions {
   enforcement?: RuntimeGateEnforcementOptions;
   errorAdapter?: (error: unknown, context: RuntimeGateErrorContext) => unknown;
   context?: HarnessContext;
+  traceRunEvents?: boolean;
 }
 
 export interface RuntimeGate {
@@ -91,7 +106,7 @@ export interface RuntimeGate {
 
 export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
   let sequence = 0;
-  const runId = createId("gate");
+  const gateRunId = createId("gate");
   let writeQueue: Promise<void> = Promise.resolve();
   const policyEvaluator = options.policyEvaluator ?? evaluatePolicy;
 
@@ -107,9 +122,8 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
       if (!isToolAllowed(contract, options.allowlist)) {
         const result = await execute(input as z.infer<TInputSchema>);
         void emitSummary(options, {
+          ...createSummaryBase(options, contract, options.context?.runId ?? gateRunId),
           mode: options.mode,
-          toolName: contract.name,
-          riskTier: contract.riskTier,
           status: "skipped",
           handlerExecuted: true,
           validationFailed: false,
@@ -121,15 +135,27 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
         return result;
       }
 
+      const runId = options.traceRunEvents
+        ? (options.context?.runId ?? createId("run"))
+        : gateRunId;
+      const runStartedAt = options.traceRunEvents ? nowIso() : undefined;
       const traceEventTypes: TraceEvent["type"][] = [];
-      const writeEvent = async (event: Omit<ToolTraceEvent, "sequence">): Promise<void> => {
+      const writeEvent = async (event: RuntimeGateTraceEventInput): Promise<void> => {
         sequence += 1;
-        const nextEvent: ToolTraceEvent = { sequence, ...event };
+        const nextEvent: TraceEvent = { sequence, ...event };
         traceEventTypes.push(nextEvent.type);
         const writeOperation = writeQueue.then(() => options.traceSink?.write(nextEvent));
         writeQueue = writeOperation.catch(() => undefined);
         await writeOperation;
       };
+      await writeRunEvent({
+        type: "run.started",
+        contract,
+        runId,
+        startedAt: runStartedAt,
+        options,
+        writeEvent,
+      });
       const parsed = contract.inputSchema.safeParse(input);
       const enforcementApplies = shouldEnforce(contract, options.enforcement);
 
@@ -145,6 +171,7 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
           error,
           options,
           runId,
+          ...(runStartedAt ? { startedAt: runStartedAt } : {}),
           traceEventTypes,
           writeEvent,
           validationFailed: true,
@@ -193,6 +220,7 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
           error,
           options,
           runId,
+          ...(runStartedAt ? { startedAt: runStartedAt } : {}),
           traceEventTypes,
           writeEvent,
           finalVerdict: blockedVerdict,
@@ -213,7 +241,7 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
 
       try {
         const result = await execute(parsedInput);
-        await writeToolEvent({
+        const succeeded = await writeToolEvent({
           contract,
           runId,
           input: started.input,
@@ -224,10 +252,19 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
           redaction: options.redaction,
           writeEvent,
         });
+        await writeRunEvent({
+          type: "run.finished",
+          status: "succeeded",
+          contract,
+          runId,
+          startedAt: runStartedAt,
+          toolCalls: [started, succeeded],
+          options,
+          writeEvent,
+        });
         await emitSummary(options, {
+          ...createSummaryBase(options, contract, runId, started.id),
           mode: options.mode,
-          toolName: contract.name,
-          riskTier: contract.riskTier,
           status: "executed",
           handlerExecuted: true,
           validationFailed: !parsed.success,
@@ -246,7 +283,7 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
           ...(verdict ? { verdict } : {}),
           cause,
         });
-        await writeToolEvent({
+        const failed = await writeToolEvent({
           contract,
           runId,
           input: started.input,
@@ -257,10 +294,19 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
           redaction: options.redaction,
           writeEvent,
         });
+        await writeRunEvent({
+          type: "run.finished",
+          status: "failed",
+          contract,
+          runId,
+          startedAt: runStartedAt,
+          toolCalls: [started, failed],
+          options,
+          writeEvent,
+        });
         const summary: RuntimeGateSummary = {
+          ...createSummaryBase(options, contract, runId, started.id),
           mode: options.mode,
-          toolName: contract.name,
-          riskTier: contract.riskTier,
           status: "failed",
           handlerExecuted: true,
           validationFailed: !parsed.success,
@@ -424,12 +470,13 @@ async function blockBeforeExecution(input: {
   error: Error;
   options: RuntimeGateOptions;
   traceEventTypes: TraceEvent["type"][];
-  writeEvent: (event: Omit<ToolTraceEvent, "sequence">) => Promise<void>;
+  writeEvent: (event: RuntimeGateTraceEventInput) => Promise<void>;
+  startedAt?: string;
   validationFailed?: boolean;
   finalVerdict?: PolicyVerdict | undefined;
   shadowComparison?: PolicyComparisonResult | undefined;
 }): Promise<RuntimeGateSummary> {
-  await writeToolEvent({
+  const blocked = await writeToolEvent({
     contract: input.contract,
     runId: input.runId,
     input: input.input,
@@ -439,10 +486,19 @@ async function blockBeforeExecution(input: {
     error: input.error.message,
     writeEvent: input.writeEvent,
   });
+  await writeRunEvent({
+    type: "run.finished",
+    status: "blocked",
+    contract: input.contract,
+    runId: input.runId,
+    startedAt: input.startedAt,
+    toolCalls: [blocked],
+    options: input.options,
+    writeEvent: input.writeEvent,
+  });
   const summary: RuntimeGateSummary = {
+    ...createSummaryBase(input.options, input.contract, input.runId, blocked.id),
     mode: input.options.mode,
-    toolName: input.contract.name,
-    riskTier: input.contract.riskTier,
     status: "blocked",
     handlerExecuted: false,
     validationFailed: input.validationFailed === true,
@@ -467,7 +523,7 @@ async function writeToolEvent(input: {
   type: ToolTraceEvent["type"];
   policyVerdict?: PolicyVerdict | undefined;
   error?: string;
-  writeEvent: (event: Omit<ToolTraceEvent, "sequence">) => Promise<void>;
+  writeEvent: (event: RuntimeGateTraceEventInput) => Promise<void>;
 }): Promise<ToolCallRecord> {
   const { record, timestamp } = createToolCallRecord({
     runId: input.runId,
@@ -489,6 +545,80 @@ async function writeToolEvent(input: {
     record,
   });
   return record;
+}
+
+async function writeRunEvent(input: {
+  type: RunTraceEvent["type"];
+  contract: ToolContract;
+  runId: string;
+  options: RuntimeGateOptions;
+  writeEvent: (event: RuntimeGateTraceEventInput) => Promise<void>;
+  startedAt?: string | undefined;
+  status?: TraceGateRunStatus;
+  toolCalls?: ToolCallRecord[];
+}): Promise<void> {
+  if (!input.options.traceRunEvents) {
+    return;
+  }
+
+  const timestamp = input.type === "run.started" ? (input.startedAt ?? nowIso()) : nowIso();
+  const startedAt = input.startedAt ?? timestamp;
+  const status = input.status ?? "running";
+  await input.writeEvent({
+    type: input.type,
+    timestamp,
+    runId: input.runId,
+    run: {
+      id: input.runId,
+      startedAt,
+      ...(input.type === "run.finished" ? { finishedAt: timestamp } : {}),
+      status,
+      toolCalls: input.toolCalls ?? [],
+      evidence: [],
+      ...(input.options.context ? { context: normalizeContext(input.options) } : {}),
+      metadata: {
+        runtimeGate: true,
+        toolName: input.contract.name,
+      },
+    },
+  });
+}
+
+function createSummaryBase(
+  options: RuntimeGateOptions,
+  contract: ToolContract,
+  runId: string,
+  toolCallId?: string,
+): Pick<
+  RuntimeGateSummary,
+  "runId" | "toolCallId" | "toolName" | "riskTier" | "context" | "contractMetadata"
+> {
+  const context = normalizeContext(options);
+  const contractMetadata = normalizeJsonObject(contract.metadata, options.redaction);
+
+  return {
+    runId,
+    ...(toolCallId ? { toolCallId } : {}),
+    toolName: contract.name,
+    riskTier: contract.riskTier,
+    ...(context ? { context } : {}),
+    ...(contractMetadata && Object.keys(contractMetadata).length > 0 ? { contractMetadata } : {}),
+  };
+}
+
+function normalizeContext(options: RuntimeGateOptions): HarnessContext | undefined {
+  if (!options.context) {
+    return undefined;
+  }
+  const value = normalizeJsonObject(options.context, options.redaction);
+  return value ? HarnessContextSchema.parse(value) : undefined;
+}
+
+function normalizeJsonObject(
+  value: unknown,
+  redaction: RedactValueOptions | undefined,
+): JsonObject | undefined {
+  return toJsonObject(value, redaction);
 }
 
 function adaptOrThrow(

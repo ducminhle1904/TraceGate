@@ -137,13 +137,21 @@ import { createRuntimeGate, createStructuredLoggerTraceSink } from "@tracegate/c
 
 const gate = createRuntimeGate({
   mode: "observe",
+  traceRunEvents: false,
   traceSink: createStructuredLoggerTraceSink({
     log: (event) => logger.info({ event }, "tracegate.tool"),
   }),
+  context: {
+    sessionId,
+    metadata: { toolCallId, episodeId, policyDecisionId },
+  },
   onSummary: (summary) => {
     logger.info({
+      runId: summary.runId,
+      toolCallId: summary.toolCallId,
       toolName: summary.toolName,
       riskTier: summary.riskTier,
+      repoRiskTier: summary.contractMetadata?.repoRiskTier,
       finalVerdict: summary.finalVerdict?.status,
       diagnostics: summary.diagnostics.map((item) => item.rule),
       handlerExecuted: summary.handlerExecuted,
@@ -153,6 +161,11 @@ const gate = createRuntimeGate({
 
 const guardedTool = gate.wrapTool(contract, existingToolHandler);
 ```
+
+Runtime gate traces are tool-boundary traces by default. Enable `traceRunEvents: true` only when
+the host app wants harness-like `run.started` / `run.finished` events around each guarded call.
+For default runtime-gate JSONL traces, use `tracegate replay-runtime` to compare boundary events
+without requiring a `tracegate.config.ts` runner.
 
 ## Matrix Testing
 
@@ -311,9 +324,9 @@ pnpm examples:check
 
 This branch prepares:
 
-- `@tracegate/core@0.2.1`
-- `@tracegate/cli@0.2.1`
-- `@tracegate/adapters@0.2.1`
+- `@tracegate/core@0.3.0`
+- `@tracegate/cli@0.3.0`
+- `@tracegate/adapters@0.3.0`
 - Runnable local examples with no model/API credentials required.
 - A VitePress docs site built from the Markdown docs in this repo.
 

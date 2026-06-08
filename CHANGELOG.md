@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Added opt-in `traceRunEvents` support for `createRuntimeGate()` so host runtimes can emit `run.started` and `run.finished` around boundary tool events.
+- Added `runId`, `toolCallId`, redacted `context`, and redacted `contractMetadata` to runtime gate summaries.
+- Added `createLooseManifestContractAdapter()` for complex tool registries with separate Zod schema maps.
+- Added `tracegate replay-runtime` for comparing runtime-gate JSONL traces without requiring `runCase()`.
+- Added `tracegate fixtures create --runtime-gate` and replay `traceEventCountMode: "tool-boundary"` for tool-boundary traces.
+- Expanded runtime integration docs for shadow comparison aggregation, production-safe sinks, original host risk tiers, and runtime gate replay boundaries.
+
 ## 0.2.1
 
 - Added legacy TypeScript declaration compatibility for `@tracegate/core/cjs` projects using `moduleResolution: "node"`.
