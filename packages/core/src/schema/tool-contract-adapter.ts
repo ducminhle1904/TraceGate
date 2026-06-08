@@ -50,6 +50,32 @@ export type ToolContractAdapter<
   overrides?: ToolContractManifestOverrides<TInputSchema>,
 ) => ToolContract<TInputSchema>;
 
+export interface ManifestContractAdapterConfig<
+  TManifest,
+  TSchemaMap extends Record<string, z.ZodType<unknown>>,
+> {
+  registry: readonly TManifest[] | Record<string, TManifest>;
+  schemas: TSchemaMap;
+  riskMapping?: RiskTierMapping<TManifest>;
+  fallbackRiskTier?: RiskTier;
+  getName: (manifest: TManifest) => keyof TSchemaMap & string;
+  getRiskTier: (manifest: TManifest) => unknown;
+  getDescription?: (manifest: TManifest) => string | undefined;
+  getApprovalRequirement?: (manifest: TManifest) => boolean | undefined;
+  getSideEffects?: (manifest: TManifest) => SideEffect[] | undefined;
+  getRequiredEvidence?: (manifest: TManifest) => string[] | undefined;
+  getMetadata?: (manifest: TManifest) => JsonObject | undefined;
+}
+
+export interface ManifestContractAdapter<
+  _TManifest,
+  TSchemaMap extends Record<string, z.ZodType<unknown>>,
+> {
+  readonly contracts: Record<string, ToolContract<TSchemaMap[keyof TSchemaMap]>>;
+  getContract(name: keyof TSchemaMap & string): ToolContract<TSchemaMap[keyof TSchemaMap]>;
+  defineContracts(): ToolContract<TSchemaMap[keyof TSchemaMap]>[];
+}
+
 export function mapRiskTier<TManifest = unknown>(
   value: unknown,
   mapping?: RiskTierMapping<TManifest>,
@@ -82,6 +108,52 @@ export function createToolContractAdapter<
   config: ToolContractAdapterConfig<TManifest, TInputSchema>,
 ): ToolContractAdapter<TManifest, TInputSchema> {
   return (manifest, overrides = {}) => defineToolContractFromManifest(manifest, config, overrides);
+}
+
+export function createManifestContractAdapter<
+  TManifest,
+  TSchemaMap extends Record<string, z.ZodType<unknown>>,
+>(
+  config: ManifestContractAdapterConfig<TManifest, TSchemaMap>,
+): ManifestContractAdapter<TManifest, TSchemaMap> {
+  const manifests = Array.isArray(config.registry)
+    ? config.registry
+    : Object.values(config.registry);
+  const contracts: Record<string, ToolContract<TSchemaMap[keyof TSchemaMap]>> = {};
+
+  for (const manifest of manifests) {
+    const name = config.getName(manifest);
+    const schema = config.schemas[name];
+    if (!schema) {
+      throw new Error(`Missing input schema for tool manifest "${name}".`);
+    }
+    contracts[name] = defineToolContractFromManifest(manifest, {
+      name,
+      riskTier: config.getRiskTier,
+      inputSchema: schema,
+      ...(config.riskMapping ? { riskMapping: config.riskMapping } : {}),
+      ...(config.fallbackRiskTier ? { fallbackRiskTier: config.fallbackRiskTier } : {}),
+      ...(config.getDescription ? { description: config.getDescription } : {}),
+      ...(config.getApprovalRequirement ? { requiresApproval: config.getApprovalRequirement } : {}),
+      ...(config.getSideEffects ? { sideEffects: config.getSideEffects } : {}),
+      ...(config.getRequiredEvidence ? { requiredEvidence: config.getRequiredEvidence } : {}),
+      ...(config.getMetadata ? { metadata: config.getMetadata } : {}),
+    });
+  }
+
+  return {
+    contracts,
+    getContract(name) {
+      const contract = contracts[name];
+      if (!contract) {
+        throw new Error(`No TraceGate contract is defined for tool "${name}".`);
+      }
+      return contract;
+    },
+    defineContracts() {
+      return Object.values(contracts);
+    },
+  };
 }
 
 export function defineToolContractFromManifest<

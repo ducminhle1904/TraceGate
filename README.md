@@ -127,6 +127,31 @@ const fromManifest = createToolContractAdapter({
 });
 ```
 
+For production runtimes that already have a tool dispatcher, start with `createRuntimeGate()` in
+`observe` mode, then move to `shadow` and targeted `enforce`:
+
+```ts
+import { createRuntimeGate, createStructuredLoggerTraceSink } from "@tracegate/core";
+
+const gate = createRuntimeGate({
+  mode: "observe",
+  traceSink: createStructuredLoggerTraceSink({
+    log: (event) => logger.info({ event }, "tracegate.tool"),
+  }),
+  onSummary: (summary) => {
+    logger.info({
+      toolName: summary.toolName,
+      riskTier: summary.riskTier,
+      finalVerdict: summary.finalVerdict?.status,
+      diagnostics: summary.diagnostics.map((item) => item.rule),
+      handlerExecuted: summary.handlerExecuted,
+    });
+  },
+});
+
+const guardedTool = gate.wrapTool(contract, existingToolHandler);
+```
+
 ## Matrix Testing
 
 Matrix cases describe expected behavior around tool calls, policy verdicts, evidence, output
@@ -269,6 +294,7 @@ pnpm examples:check
 - [CI guide](docs/guides/ci.md)
 - [Policy cookbook](docs/guides/policy-cookbook.md)
 - [Redaction guide](docs/guides/redaction.md)
+- [Runtime integration guide](docs/guides/runtime-integration.md)
 - [Core contracts reference](docs/reference/core-contracts.md)
 - [Matrix file reference](docs/reference/matrix-file.md)
 - [Trace schema reference](docs/reference/trace-schema.md)
@@ -283,14 +309,14 @@ pnpm examples:check
 
 This branch prepares:
 
-- `@tracegate/core@0.1.1`
-- `@tracegate/cli@0.1.1`
-- `@tracegate/adapters@0.1.1`
+- `@tracegate/core@0.2.0`
+- `@tracegate/cli@0.2.0`
+- `@tracegate/adapters@0.2.0`
 - Runnable local examples with no model/API credentials required.
 - A VitePress docs site built from the Markdown docs in this repo.
 
-The next product work should focus on deeper adapter coverage and real-world example suites
-from production-style agent workflows.
+The next product work should focus on deeper adapter coverage and broader production-style
+runtime gates from real agent workflows.
 
 ## Contributing
 

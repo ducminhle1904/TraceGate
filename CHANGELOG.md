@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+- Added `createRuntimeGate()` for gradual production rollout with `off`, `observe`, `shadow`, and targeted `enforce` modes.
+- Added policy verdict comparison helpers for shadowing existing runtime decisions against TraceGate policy.
+- Added `createStructuredLoggerTraceSink()` for forwarding redacted trace events into project-owned production loggers.
+- Added `createManifestContractAdapter()` for registries that store tool metadata separately from Zod input schemas.
+- Added a CommonJS lazy loader at `@tracegate/core/cjs` for CJS hosts that cannot statically import the ESM package.
+- Added runtime integration docs for observe, shadow, low-risk enforcement, approval-denied diagnostics, and error adapters.
+
 ## 0.1.1
 
 - Fixed publish metadata so `@tracegate/cli` and `@tracegate/adapters` depend on the npm `@tracegate/core` version instead of `workspace:*`.

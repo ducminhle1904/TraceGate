@@ -9,8 +9,10 @@
 - `harness.finishRun(status?)`: finishes the active run, emits `run.finished`, and flushes the sink.
 - `harness.recordEvidence(record)`: validates evidence, auto-fills `timestamp` when omitted, appends it to the active run, and emits `evidence.recorded`.
 - `harness.wrapTool(contract, execute)`: returns an async wrapped tool.
+- `createRuntimeGate(options)`: wraps existing runtime handlers in `off`, `observe`, `shadow`, or `enforce` mode for gradual production rollout.
 - `createMemoryTraceSink()`: stores ordered trace events in memory for tests.
 - `createJsonlFileTraceSink(path)`: appends one JSON trace event per line to a local file.
+- `createStructuredLoggerTraceSink(options)`: forwards redacted trace events to a project-owned logger.
 
 ## Tool Wrapper Lifecycle
 
@@ -80,6 +82,23 @@ interface TraceSink {
 ```
 
 The memory sink is useful for tests. The JSONL file sink is intended for local development traces and writes parseable JSON lines.
+The structured logger sink is intended for app loggers; it emits the same redacted `TraceEvent`
+objects and performs no network export by itself.
+
+## Runtime Gate Rollout
+
+Use `createRuntimeGate()` when an app already has a mature tool runtime and cannot switch every
+tool to `createHarness()` at once.
+
+- `off`: call the host handler directly.
+- `observe`: validate, evaluate policy, trace, and summarize without blocking execution.
+- `shadow`: observe plus compare a host runtime verdict with TraceGate's verdict.
+- `enforce`: block invalid input and blocking/review verdicts for configured risk tiers.
+
+`errorAdapter` can translate TraceGate runtime errors into framework-specific tool-result
+payloads. This is useful for agent frameworks that expect a tool response instead of an exception.
+
+See [Runtime integration](../guides/runtime-integration.md) for rollout patterns.
 
 ## Policy Inputs
 

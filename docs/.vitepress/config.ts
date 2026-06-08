@@ -35,6 +35,7 @@ export default defineConfig({
         items: [
           { text: "Policy Cookbook", link: "/guides/policy-cookbook" },
           { text: "Redaction", link: "/guides/redaction" },
+          { text: "Runtime Integration", link: "/guides/runtime-integration" },
           { text: "Framework Adapters", link: "/guides/framework-adapters" },
           { text: "Release Checklist", link: "/guides/release-checklist" },
         ],

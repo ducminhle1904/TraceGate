@@ -6,10 +6,13 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  comparePolicyVerdicts,
   createHarness,
   createJsonlFileTraceSink,
   createMemoryTraceSink,
   createPolicyEvaluator,
+  createRuntimeGate,
+  createStructuredLoggerTraceSink,
   definePolicy,
   defineToolContract,
   type TraceEvent,
@@ -21,6 +24,270 @@ import {
 
 const LookupInputSchema = z.object({
   orderId: z.string().min(1),
+});
+
+describe("runtime gate helper", () => {
+  it("keeps mode off behavior unchanged", async () => {
+    const traceSink = createMemoryTraceSink();
+    let summaries = 0;
+    const gate = createRuntimeGate({
+      mode: "off",
+      traceSink,
+      onSummary: () => {
+        summaries += 1;
+      },
+    });
+    const lookup = gate.wrapTool(lookupOrderContract, async (input) => ({ id: input.orderId }));
+
+    await expect(lookup({ orderId: "" })).resolves.toEqual({ id: "" });
+    expect(traceSink.events).toEqual([]);
+    expect(summaries).toBe(0);
+  });
+
+  it("observes invalid input without blocking host execution", async () => {
+    const summaries: unknown[] = [];
+    const gate = createRuntimeGate({
+      mode: "observe",
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+    let executed = false;
+    const lookup = gate.wrapTool(lookupOrderContract, async () => {
+      executed = true;
+      return { ok: true };
+    });
+
+    await expect(lookup({ orderId: "" })).resolves.toEqual({ ok: true });
+    expect(executed).toBe(true);
+    expect(summaries).toMatchObject([{ validationFailed: true, handlerExecuted: true }]);
+  });
+
+  it("bypasses validation and tracing for tools outside the allowlist", async () => {
+    const traceSink = createMemoryTraceSink();
+    const summaries: unknown[] = [];
+    const gate = createRuntimeGate({
+      mode: "enforce",
+      allowlist: ["otherTool"],
+      traceSink,
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+    const lookup = gate.wrapTool(lookupOrderContract, async (input) => ({ id: input.orderId }));
+
+    await expect(lookup({ orderId: "" })).resolves.toEqual({ id: "" });
+    expect(traceSink.events).toEqual([]);
+    expect(summaries).toMatchObject([
+      {
+        status: "skipped",
+        handlerExecuted: true,
+        traceEventCount: 0,
+      },
+    ]);
+  });
+
+  it("enforces validation before host execution and can adapt errors", async () => {
+    const gate = createRuntimeGate({
+      mode: "enforce",
+      enforcement: { validationOnly: true, riskTiers: ["read"] },
+      errorAdapter: (error, context) => ({
+        type: "tool_result",
+        ok: false,
+        errorName: error instanceof Error ? error.name : "unknown",
+        tool: context.contract.name,
+        executed: context.summary.handlerExecuted,
+      }),
+    });
+    let executed = false;
+    const lookup = gate.wrapTool(lookupOrderContract, async () => {
+      executed = true;
+      return { ok: true };
+    });
+
+    await expect(lookup({ orderId: "" })).resolves.toEqual({
+      type: "tool_result",
+      ok: false,
+      errorName: "TraceGateInputValidationError",
+      tool: "lookupOrder",
+      executed: false,
+    });
+    expect(executed).toBe(false);
+  });
+
+  it("blocks denied approval with the same diagnostics as the harness path", async () => {
+    const gate = createRuntimeGate({
+      mode: "enforce",
+      approvalHandler: () => ({ status: "denied", reason: "Manager rejected the refund." }),
+    });
+    let executed = false;
+    const refund = gate.wrapTool(refundContract, async () => {
+      executed = true;
+      return { ok: true };
+    });
+
+    await expect(refund({ orderId: "order-1", amount: 10 })).rejects.toMatchObject({
+      verdict: {
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            source: "approval-handler",
+            rule: "approval-denied",
+            message: "Manager rejected the refund.",
+          }),
+          expect.objectContaining({
+            source: "runtime",
+            rule: "execution-skipped",
+          }),
+        ]),
+      },
+    });
+    expect(executed).toBe(false);
+  });
+
+  it("summarizes shadow policy mismatches without blocking", async () => {
+    const summaries: Array<{ shadowComparison?: { classifications: string[] } | undefined }> = [];
+    const gate = createRuntimeGate({
+      mode: "shadow",
+      policyEvaluator: ({ contract }) => ({
+        status: "block",
+        reasons: ["TraceGate blocks this tool."],
+        riskTier: contract.riskTier,
+        toolName: contract.name,
+      }),
+      runtimeVerdictEvaluator: ({ contract }) => ({
+        status: "allow",
+        reasons: ["Runtime currently allows this tool."],
+        riskTier: contract.riskTier,
+        toolName: contract.name,
+      }),
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+    const lookup = gate.wrapTool(lookupOrderContract, async () => ({ ok: true }));
+
+    await expect(lookup({ orderId: "order-1" })).resolves.toEqual({ ok: true });
+    expect(summaries[0]?.shadowComparison?.classifications).toContain(
+      "runtime_allow_tracegate_block",
+    );
+  });
+
+  it("starts runtime verdict evaluation before shadow policy resolution completes", async () => {
+    let releasePolicy!: () => void;
+    let runtimeVerdictStarted = false;
+    const gate = createRuntimeGate({
+      mode: "shadow",
+      policyEvaluator: async ({ contract }) => {
+        await new Promise<void>((resolve) => {
+          releasePolicy = resolve;
+        });
+        return {
+          status: "allow",
+          reasons: ["TraceGate allows this tool."],
+          riskTier: contract.riskTier,
+          toolName: contract.name,
+        };
+      },
+      runtimeVerdictEvaluator: ({ contract }) => {
+        runtimeVerdictStarted = true;
+        return {
+          status: "allow",
+          reasons: ["Runtime allows this tool."],
+          riskTier: contract.riskTier,
+          toolName: contract.name,
+        };
+      },
+    });
+    const lookup = gate.wrapTool(lookupOrderContract, async () => ({ ok: true }));
+
+    const result = lookup({ orderId: "order-1" });
+    await delay(0);
+    expect(runtimeVerdictStarted).toBe(true);
+    releasePolicy();
+
+    await expect(result).resolves.toEqual({ ok: true });
+  });
+
+  it("surfaces runtime verdict evaluator rejection in shadow mode", async () => {
+    const gate = createRuntimeGate({
+      mode: "shadow",
+      policyEvaluator: ({ contract }) => ({
+        status: "allow",
+        reasons: ["TraceGate allows this tool."],
+        riskTier: contract.riskTier,
+        toolName: contract.name,
+      }),
+      runtimeVerdictEvaluator: () => {
+        throw new Error("runtime verdict failed");
+      },
+    });
+    const lookup = gate.wrapTool(lookupOrderContract, async () => ({ ok: true }));
+
+    await expect(lookup({ orderId: "order-1" })).rejects.toThrow("runtime verdict failed");
+  });
+
+  it("redacts logger sink output before production-style logging", async () => {
+    const logged: string[] = [];
+    const traceSink = createStructuredLoggerTraceSink({
+      log(event) {
+        logged.push(JSON.stringify(event));
+      },
+    });
+    const secretContract = defineToolContract({
+      name: "lookupSecret",
+      riskTier: "read",
+      inputSchema: z.object({ apiKey: z.string(), orderId: z.string() }),
+    });
+    const gate = createRuntimeGate({ mode: "observe", traceSink });
+    const lookup = gate.wrapTool(secretContract, async () => ({
+      token: "Bearer abcdefghijklmnop",
+    }));
+
+    await lookup({ apiKey: "sk-proj-1234567890abcdef1234567890abcdef", orderId: "order-1" });
+
+    const output = logged.join("\n");
+    expect(output).not.toContain("sk-proj-1234567890abcdef1234567890abcdef");
+    expect(output).not.toContain("Bearer abcdefghijklmnop");
+    expect(output).toContain("[REDACTED]");
+  });
+
+  it("serializes async trace sink writes across concurrent calls", async () => {
+    const events: TraceEvent[] = [];
+    const traceSink = createStructuredLoggerTraceSink({
+      async log(event) {
+        if (event.sequence === 1) {
+          await delay(20);
+        }
+        events.push(event);
+      },
+    });
+    const gate = createRuntimeGate({ mode: "observe", traceSink });
+    const lookup = gate.wrapTool(lookupOrderContract, async (input) => ({ id: input.orderId }));
+
+    await Promise.all([lookup({ orderId: "order-1" }), lookup({ orderId: "order-2" })]);
+
+    expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("classifies policy comparison results", () => {
+    expect(
+      comparePolicyVerdicts({
+        contract: lookupOrderContract,
+        runtimeVerdict: {
+          status: "allow",
+          reasons: ["runtime allow"],
+          riskTier: "read",
+          toolName: "lookupOrder",
+        },
+        traceGateVerdict: {
+          status: "review",
+          reasons: ["tracegate review"],
+          riskTier: "read",
+          toolName: "lookupOrder",
+        },
+      }).classifications,
+    ).toEqual(["runtime_allow_tracegate_review"]);
+  });
 });
 
 const lookupOrderContract = defineToolContract({
@@ -38,6 +305,10 @@ const refundContract = defineToolContract({
     amount: z.number().positive(),
   }),
 });
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 describe("createHarness runtime", () => {
   it("executes an allowed low-risk call and emits ordered trace events", async () => {

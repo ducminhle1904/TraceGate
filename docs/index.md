@@ -9,6 +9,7 @@ known failures in CI.
 - [Getting started](guides/getting-started.md)
 - [Tool-call contracts](concepts/tool-call-contracts.md)
 - [Runtime semantics](reference/runtime-semantics.md)
+- [Runtime integration](guides/runtime-integration.md)
 - [Matrix file reference](reference/matrix-file.md)
 - [Replay](concepts/replay.md)
 

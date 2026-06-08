@@ -74,6 +74,49 @@ mapRiskTier("broker_write", {
 });
 ```
 
+### `createManifestContractAdapter(config)`
+
+Builds a named contract lookup from a registry plus a separate Zod schema map. This is useful
+when the registry stores metadata and policy fields, while schemas live in a typed module.
+
+```ts
+const adapter = createManifestContractAdapter({
+  registry,
+  schemas: schemaByToolName,
+  getName: (tool) => tool.name,
+  getRiskTier: (tool) => tool.policy.riskTier,
+  riskMapping: {
+    read: "read",
+    draft: "medium",
+    canvas_mutation: "medium",
+    persisted_write: "medium",
+    trading_action: "high",
+    admin_action: "critical",
+  },
+  getDescription: (tool) => tool.description,
+  getRequiredEvidence: (tool) => [tool.policy.permission],
+  getMetadata: (tool) => ({
+    permission: tool.policy.permission,
+    executionLocation: tool.executionLocation,
+  }),
+});
+
+const contract = adapter.getContract("placeOrder");
+```
+
+Failing example:
+
+```ts
+createManifestContractAdapter({
+  registry: [{ name: "placeOrder", policy: { riskTier: "trading_action" } }],
+  schemas: {},
+  getName: (tool) => tool.name,
+  getRiskTier: (tool) => tool.policy.riskTier,
+});
+```
+
+This fails because the registry references a tool name with no matching input schema.
+
 ### `evaluatePolicy(input)`
 
 Evaluates the minimal default policy primitive. It does not execute tools.

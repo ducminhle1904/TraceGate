@@ -4,25 +4,29 @@ import type { EvidenceRecord, EvidenceRecordInput } from "../evidence/evidence.j
 import { createEvidenceRecord } from "../evidence/evidence.js";
 import type { ApprovalState, EvaluatePolicyInput } from "../policy/evaluate-policy.js";
 import { evaluatePolicy } from "../policy/evaluate-policy.js";
-import type { PolicyDiagnostic, PolicyVerdict } from "../policy/verdict.js";
-import { type RedactValueOptions, redactValue } from "../redaction/redact.js";
-import type { JsonObject, JsonValue } from "../schema/json.js";
-import { JsonObjectSchema, JsonValueSchema } from "../schema/json.js";
+import type { PolicyVerdict } from "../policy/verdict.js";
+import type { RedactValueOptions } from "../redaction/redact.js";
+import type { JsonObject } from "../schema/json.js";
 import type { HarnessContext, HarnessSurface } from "../schema/surface.js";
 import { HarnessContextSchema, HarnessSurfaceSchema } from "../schema/surface.js";
 import type { ToolContract } from "../schema/tool-contract.js";
 import type { ToolCallRecord, TraceGateRun, TraceGateRunStatus } from "../schema/trace.js";
-import {
-  ToolCallRecordSchema,
-  TraceGateRunSchema,
-  TraceGateRunStatusSchema,
-} from "../schema/trace.js";
+import { TraceGateRunSchema, TraceGateRunStatusSchema } from "../schema/trace.js";
+import { appendPolicyDiagnostic, resolvePolicyVerdictAfterReview } from "./approval-resolution.js";
 import {
   TraceGateInputValidationError,
   TraceGatePolicyBlockedError,
   TraceGateReviewRequiredError,
   TraceGateToolExecutionError,
 } from "./errors.js";
+import {
+  createId,
+  createToolCallRecord,
+  nowIso,
+  type ToolCallRecordInput,
+  toJsonCompatible,
+  toJsonValue,
+} from "./tool-record.js";
 import {
   createMemoryTraceSink,
   type TraceEvent,
@@ -198,7 +202,7 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
       const parsedInput = contract.inputSchema.safeParse(input);
 
       if (!parsedInput.success) {
-        const redactedInput = toJsonValue(input);
+        const redactedInput = toJsonValue(input, redaction);
         await recordToolEvent(run, "tool.blocked", {
           toolName: contract.name,
           riskTier: contract.riskTier,
@@ -222,10 +226,10 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
         input: parsedInput.data,
       });
       const verdict = await resolveVerdict(contract, parsedInput.data, run, initialVerdict);
-      const redactedInput = toJsonValue(parsedInput.data);
+      const redactedInput = toJsonValue(parsedInput.data, redaction);
 
       if (verdict.status === "block") {
-        const blockedVerdict = withDiagnostic(verdict, {
+        const blockedVerdict = appendPolicyDiagnostic(verdict, {
           source: "runtime",
           rule: "execution-skipped",
           message: "Tool was not executed because the policy verdict was block.",
@@ -247,7 +251,7 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
       }
 
       if (verdict.status === "review") {
-        const reviewVerdict = withDiagnostic(verdict, {
+        const reviewVerdict = appendPolicyDiagnostic(verdict, {
           source: "runtime",
           rule: "execution-skipped",
           message: "Tool was not executed because the policy verdict was review.",
@@ -322,69 +326,33 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
     initialVerdict: PolicyVerdict,
   ): Promise<PolicyVerdict> => {
     const context = getRunContext(run);
-    if (initialVerdict.status !== "review") {
-      return initialVerdict;
-    }
-
-    const approvalResult = normalizeApprovalResult(
-      await options.approvalHandler?.({
-        contract,
-        input,
-        context,
-        verdict: initialVerdict,
-      }),
-    );
-
-    if (approvalResult.status === "missing") {
-      return withDiagnostic(initialVerdict, {
-        source: options.approvalHandler ? "approval-handler" : "runtime",
-        rule: options.approvalHandler ? "approval-missing" : "approval-handler-missing",
-        message:
-          approvalResult.reason ??
-          (options.approvalHandler
-            ? "Approval handler returned missing approval."
-            : "No approval handler is configured for a review verdict."),
-        riskTier: contract.riskTier,
-        approval: "missing",
-      });
-    }
-
-    const resolved = await policyEvaluator({
+    return resolvePolicyVerdictAfterReview({
       contract,
-      context,
-      approval: approvalResult.status,
-      environment: getRunEnvironment(run),
-      evidence: run.evidence,
       input,
-    });
-    return withDiagnostic(resolved, {
-      source: "approval-handler",
-      rule: `approval-${approvalResult.status}`,
-      message: approvalResult.reason ?? `Approval handler returned "${approvalResult.status}".`,
-      riskTier: contract.riskTier,
-      approval: approvalResult.status,
+      context,
+      initialVerdict,
+      approvalHandler: options.approvalHandler,
+      evaluateWithApproval: (approval) =>
+        policyEvaluator({
+          contract,
+          context,
+          approval,
+          environment: getRunEnvironment(run),
+          evidence: run.evidence,
+          input,
+        }),
     });
   };
 
   const recordToolEvent = async (
     run: TraceGateRun,
     type: Extract<TraceEvent["type"], `tool.${string}`>,
-    input: Omit<ToolCallRecord, "id" | "runId" | "timestamp" | "input" | "output" | "metadata"> & {
-      input?: JsonValue | undefined;
-      output?: unknown;
-      metadata?: unknown;
-    },
+    input: ToolCallRecordInput,
   ): Promise<ToolCallRecord> => {
-    const timestamp = nowIso();
-    const { input: toolInput, output: toolOutput, metadata: toolMetadata, ...recordInput } = input;
-    const record = ToolCallRecordSchema.parse({
-      ...recordInput,
-      id: createId("tool"),
+    const { record, timestamp } = createToolCallRecord({
       runId: run.id,
-      timestamp,
-      ...(toolInput !== undefined ? { input: toolInput } : {}),
-      ...(toolOutput !== undefined ? { output: toJsonValue(toolOutput) } : {}),
-      ...(toolMetadata !== undefined ? { metadata: toJsonObject(toolMetadata) } : {}),
+      redaction,
+      record: input,
     });
 
     run.toolCalls.push(record);
@@ -395,26 +363,6 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
       record,
     });
     return record;
-  };
-
-  const toJsonValue = (value: unknown): JsonValue | undefined => {
-    if (value === undefined) {
-      return undefined;
-    }
-
-    const redacted = redactValue(value, redaction);
-    const serialized = toJsonCompatible(redacted);
-    return JsonValueSchema.parse(serialized);
-  };
-
-  const toJsonObject = (value: unknown): JsonObject | undefined => {
-    if (value === undefined) {
-      return undefined;
-    }
-
-    const redacted = redactValue(value, redaction);
-    const serialized = toJsonCompatible(redacted);
-    return JsonObjectSchema.parse(serialized);
   };
 
   return {
@@ -436,14 +384,6 @@ function normalizeSurface(
   return surface === undefined ? undefined : HarnessSurfaceSchema.parse(surface);
 }
 
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
-function createId(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
 function getRunContext(run: TraceGateRun): HarnessContext {
   return run.context ?? {};
 }
@@ -452,38 +392,8 @@ function getRunEnvironment(run: TraceGateRun) {
   return run.surface?.environment ?? run.context?.surface?.environment;
 }
 
-function normalizeApprovalResult(result: ApprovalHandlerResult | undefined): {
-  status: ApprovalState;
-  reason?: string;
-  metadata?: JsonObject;
-} {
-  if (result === undefined) {
-    return { status: "missing" };
-  }
-  if (typeof result === "string") {
-    return { status: result };
-  }
-  return result;
-}
-
-function withDiagnostic(verdict: PolicyVerdict, diagnostic: PolicyDiagnostic): PolicyVerdict {
-  return {
-    ...verdict,
-    diagnostics: [...(verdict.diagnostics ?? []), diagnostic],
-  };
-}
-
 function snapshotRun(run: TraceGateRun): TraceGateRun {
   return TraceGateRunSchema.parse(toJsonCompatible(run));
-}
-
-function toJsonCompatible(value: unknown): unknown {
-  try {
-    const serialized = JSON.stringify(value);
-    return serialized === undefined ? String(value) : JSON.parse(serialized);
-  } catch {
-    return "[UNSERIALIZABLE]";
-  }
 }
 
 function getErrorMessage(error: unknown): string {

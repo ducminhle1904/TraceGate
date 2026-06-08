@@ -79,9 +79,25 @@ export type {
 } from "./runtime/harness.js";
 export { createHarness } from "./runtime/harness.js";
 export type {
+  PolicyComparisonClassification,
+  PolicyComparisonResult,
+  RuntimeGate,
+  RuntimeGateEnforcementOptions,
+  RuntimeGateErrorContext,
+  RuntimeGateMode,
+  RuntimeGateOptions,
+  RuntimeGateSummary,
+} from "./runtime/runtime-gate.js";
+export {
+  comparePolicyVerdicts,
+  createRuntimeGate,
+  summarizePolicyComparisons,
+} from "./runtime/runtime-gate.js";
+export type {
   EvidenceTraceEvent,
   MemoryTraceSink,
   RunTraceEvent,
+  StructuredLoggerTraceSinkOptions,
   ToolTraceEvent,
   TraceEvent,
   TraceSink,
@@ -89,6 +105,7 @@ export type {
 export {
   createJsonlFileTraceSink,
   createMemoryTraceSink,
+  createStructuredLoggerTraceSink,
   EvidenceTraceEventSchema,
   RunTraceEventSchema,
   ToolTraceEventSchema,
@@ -126,6 +143,8 @@ export {
   ToolNameSchema,
 } from "./schema/tool-contract.js";
 export type {
+  ManifestContractAdapter,
+  ManifestContractAdapterConfig,
   MapRiskTierOptions,
   RiskTierMapping,
   ToolContractAdapter,
@@ -134,6 +153,7 @@ export type {
   ToolManifestValue,
 } from "./schema/tool-contract-adapter.js";
 export {
+  createManifestContractAdapter,
   createToolContractAdapter,
   defineToolContractFromManifest,
   mapRiskTier,

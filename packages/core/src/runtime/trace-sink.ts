@@ -88,6 +88,11 @@ export interface MemoryTraceSink extends TraceSink {
   clear(): void;
 }
 
+export interface StructuredLoggerTraceSinkOptions {
+  log(event: TraceEvent): Promise<void> | void;
+  flush?: () => Promise<void> | void;
+}
+
 export function createMemoryTraceSink(): MemoryTraceSink {
   const events: TraceEvent[] = [];
 
@@ -98,6 +103,19 @@ export function createMemoryTraceSink(): MemoryTraceSink {
     },
     clear() {
       events.length = 0;
+    },
+  };
+}
+
+export function createStructuredLoggerTraceSink(
+  options: StructuredLoggerTraceSinkOptions,
+): TraceSink {
+  return {
+    write(event) {
+      return options.log(event);
+    },
+    flush() {
+      return options.flush?.();
     },
   };
 }

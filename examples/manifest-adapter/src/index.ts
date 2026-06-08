@@ -1,4 +1,5 @@
 import {
+  createManifestContractAdapter,
   createToolContractAdapter,
   defineToolContractFromManifest,
   mapRiskTier,
@@ -74,6 +75,69 @@ const overridden = defineToolContractFromManifest(
   },
 );
 
+const nodeTraderLikeSchemas = {
+  readPosition: z.object({ symbol: z.string() }),
+  placeOrder: z.object({ symbol: z.string(), quantity: z.number().positive() }),
+};
+
+type NodeTraderLikeRiskTier =
+  | "read"
+  | "draft"
+  | "canvas_mutation"
+  | "persisted_write"
+  | "trading_action"
+  | "admin_action";
+
+interface NodeTraderLikeManifest {
+  name: keyof typeof nodeTraderLikeSchemas;
+  description: string;
+  policy: {
+    riskTier: NodeTraderLikeRiskTier;
+    permission: string;
+  };
+  executionLocation: string;
+}
+
+const nodeTraderLikeRegistry: NodeTraderLikeManifest[] = [
+  {
+    name: "readPosition",
+    description: "Read current position",
+    policy: { riskTier: "read", permission: "portfolio:read" },
+    executionLocation: "server",
+  },
+  {
+    name: "placeOrder",
+    description: "Place a live order",
+    policy: { riskTier: "trading_action", permission: "orders:write" },
+    executionLocation: "broker",
+  },
+];
+
+const nodeTraderLikeAdapter = createManifestContractAdapter({
+  registry: nodeTraderLikeRegistry,
+  schemas: nodeTraderLikeSchemas,
+  getName: (manifest) => manifest.name,
+  getDescription: (manifest) => manifest.description,
+  getRiskTier: (manifest) => manifest.policy.riskTier,
+  riskMapping: {
+    read: "read",
+    draft: "medium",
+    canvas_mutation: "medium",
+    persisted_write: "medium",
+    trading_action: "high",
+    admin_action: "critical",
+  },
+  getApprovalRequirement: (manifest) =>
+    manifest.policy.riskTier === "trading_action" || manifest.policy.riskTier === "admin_action",
+  getRequiredEvidence: (manifest) => [manifest.policy.permission],
+  getMetadata: (manifest) => ({
+    permission: manifest.policy.permission,
+    executionLocation: manifest.executionLocation,
+  }),
+});
+
+const placeOrderContract = nodeTraderLikeAdapter.getContract("placeOrder");
+
 assertEqual(mapRiskTier("broker_write", riskMapping), "high", "broker_write risk mapping");
 assertEqual(readOnlyContract?.requiresApproval, false, "read-only approval requirement");
 assertEqual(brokerWriteContract?.riskTier, "high", "broker-write TraceGate risk tier");
@@ -93,6 +157,12 @@ assertJsonEqual(
   { internalRisk: "broker_write", owner: "risk" },
   "override metadata merge",
 );
+assertEqual(placeOrderContract.riskTier, "high", "NodeTrader-like trading risk mapping");
+assertJsonEqual(
+  placeOrderContract.requiredEvidence,
+  ["orders:write"],
+  "NodeTrader-like required evidence",
+);
 
 console.log(
   JSON.stringify(
@@ -110,6 +180,12 @@ console.log(
         name: overridden.name,
         requiredEvidence: overridden.requiredEvidence,
         metadata: overridden.metadata,
+      },
+      nodeTraderLike: {
+        name: placeOrderContract.name,
+        riskTier: placeOrderContract.riskTier,
+        requiredEvidence: placeOrderContract.requiredEvidence,
+        metadata: placeOrderContract.metadata,
       },
     },
     null,

@@ -68,15 +68,19 @@ defineToolContractFromManifest(descriptor, {
 NodeTrader-style registry with separate Zod schemas:
 
 ```ts
+import { createManifestContractAdapter } from "@tracegate/core";
+
 const schemas = {
   readPosition: ReadPositionInput,
   placeOrder: PlaceOrderInput,
 };
 
-defineToolContractFromManifest(manifest, {
-  name: (tool) => tool.name,
-  description: (tool) => tool.description,
-  riskTier: (tool) => tool.policy.riskTier,
+const adapter = createManifestContractAdapter({
+  registry: toolRegistry,
+  schemas,
+  getName: (tool) => tool.name,
+  getDescription: (tool) => tool.description,
+  getRiskTier: (tool) => tool.policy.riskTier,
   riskMapping: {
     read: "read",
     draft: "medium",
@@ -85,15 +89,16 @@ defineToolContractFromManifest(manifest, {
     trading_action: "high",
     admin_action: "critical",
   },
-  inputSchema: (tool) => schemas[tool.name],
-  requiresApproval: (tool) =>
+  getApprovalRequirement: (tool) =>
     tool.policy.riskTier === "trading_action" || tool.policy.riskTier === "admin_action",
-  requiredEvidence: (tool) => [tool.policy.permission],
-  metadata: (tool) => ({
+  getRequiredEvidence: (tool) => [tool.policy.permission],
+  getMetadata: (tool) => ({
     permission: tool.policy.permission,
     executionLocation: tool.executionLocation,
   }),
 });
+
+const placeOrderContract = adapter.getContract("placeOrder");
 ```
 
 TraceGate records and tests policy expectations around these contracts. It does not replace
