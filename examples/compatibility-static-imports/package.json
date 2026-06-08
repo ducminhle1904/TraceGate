@@ -1,0 +1,20 @@
+{
+  "name": "tracegate-example-compatibility-static-imports",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:esm": "node src/esm-app.mjs",
+    "test:tsx": "tsx src/tsx-app.ts",
+    "test:matrix": "pnpm --filter @tracegate/cli build && pnpm exec tracegate doctor && pnpm exec tracegate test --json",
+    "test:all": "pnpm test:esm && pnpm test:tsx && pnpm test:matrix"
+  },
+  "dependencies": {
+    "@tracegate/cli": "workspace:*",
+    "@tracegate/core": "workspace:*",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6"
+  }
+}

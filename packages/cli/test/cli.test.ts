@@ -53,6 +53,45 @@ export default {
     });
   });
 
+  it("loads tracegate.config.ts with static TraceGate package imports", async () => {
+    await withTempDir(async (cwd) => {
+      await writeConfig(
+        cwd,
+        `import { defineMatrix } from "@tracegate/core";
+import { defineTraceGateConfig } from "@tracegate/cli/config";
+
+export default defineTraceGateConfig({
+  matrix: defineMatrix([
+    {
+      id: "static-imports",
+      prompt: "Exercise static imports",
+      expect: {
+        requiredTools: ["lookupOrder"],
+        outputKeys: ["answer"],
+      },
+    },
+  ]),
+  async runCase() {
+    return {
+      output: { answer: "ready" },
+      events: [
+        ${toolEvent("tool.started", "started", "lookupOrder", {})},
+      ],
+    };
+  },
+});
+`,
+      );
+      const io = createIo(cwd);
+
+      await expect(runCli(["test", "--json"], io)).resolves.toBe(0);
+      expect(JSON.parse(io.stdoutText())).toMatchObject({
+        status: "passed",
+        cases: [{ id: "static-imports", status: "passed" }],
+      });
+    });
+  });
+
   it("summarizes non-JSON output without crashing", async () => {
     await withTempDir(async (cwd) => {
       await writeConfig(
@@ -598,7 +637,9 @@ export default {
         'Expected policy verdicts for "sendEmail" [review], got [allow].',
       );
       expect(io.stdoutText()).toContain("Expected evidence [approval-1:user-approval], got [].");
-      expect(io.stdoutText()).toContain("Expected output keys [blocked], got [].");
+      expect(io.stdoutText()).toContain(
+        "Expected output keys [blocked], got []. Missing: [blocked]. Unexpected: [].",
+      );
       expect(io.stdoutText()).toContain('Expected run status "blocked", got "succeeded".');
     });
   });
@@ -699,7 +740,10 @@ export default {
     await withTempDir(async (cwd) => {
       const missing = createIo(cwd);
       await expect(runCli(["doctor"], missing)).resolves.toBe(1);
-      expect(missing.stdoutText()).toContain("[FAIL] config exists");
+      expect(missing.stdoutText()).toContain("[OK] @tracegate/core resolves from project");
+      expect(missing.stdoutText()).toContain("[OK] @tracegate/cli/config resolves from project");
+      expect(missing.stdoutText()).toContain("[FAIL] config missing");
+      expect(missing.stdoutText()).toContain('Run "tracegate init"');
 
       await writeConfig(
         cwd,

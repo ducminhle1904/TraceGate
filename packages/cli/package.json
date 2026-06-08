@@ -1,10 +1,12 @@
 {
   "name": "@tracegate/cli",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Command line interface for running TraceGate matrix tests.",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ducminhle1904/TraceGate.git",
@@ -28,11 +30,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./config": {
       "types": "./dist/config.d.ts",
-      "import": "./dist/config.js"
+      "import": "./dist/config.js",
+      "default": "./dist/config.js"
     }
   },
   "files": [

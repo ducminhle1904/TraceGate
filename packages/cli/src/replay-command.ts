@@ -16,6 +16,7 @@ import {
 
 import { evaluateMatrixAssertions } from "./assertions.js";
 import { loadTraceGateConfig, loadTypeScriptModule, unwrapDefault } from "./config-loader.js";
+import { formatRunCaseError, isNodeError } from "./errors.js";
 import {
   createMatrixReport,
   formatConsoleReport,
@@ -168,7 +169,7 @@ export async function runReplayCommand(args: string[], io: CommandIo): Promise<n
       }
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatRunCaseError(error);
     failures.push(
       failureContext === "runCase"
         ? `runCase threw: ${message}`
@@ -315,8 +316,4 @@ function write(stream: Pick<NodeJS.WritableStream, "write">, value: string): voi
 
 function now(io: CommandIo): Date {
   return io.now?.() ?? new Date();
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

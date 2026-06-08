@@ -180,7 +180,7 @@ export function compareReplayExpectation(
   compareRecordArrays("tool statuses", expected.toolStatuses, actual.toolStatuses, failures);
   compareRecordArrays("policy verdicts", expected.policyVerdicts, actual.policyVerdicts, failures);
   compareEvidence(expected.evidence, actual.evidence, failures);
-  compareArray("output keys", expected.outputKeys, actual.outputKeys, failures);
+  compareOutputKeys(expected.outputKeys, actual.outputKeys, failures);
 
   if (expected.runStatus !== undefined && actual.runStatus !== expected.runStatus) {
     failures.push(
@@ -190,7 +190,7 @@ export function compareReplayExpectation(
 
   if (source.events !== undefined && actual.traceEventCount !== expected.traceEventCount) {
     failures.push(
-      `Expected ${expected.traceEventCount} trace events, got ${actual.traceEventCount}.`,
+      `Expected ${expected.traceEventCount} trace events from fixture, got ${actual.traceEventCount} current events.`,
     );
   }
 
@@ -291,8 +291,29 @@ function compareEvidence(
   compareArray("evidence", expectedValues, actualValues, failures);
 }
 
+function compareOutputKeys(expected: string[], actual: string[], failures: string[]): void {
+  const expectedSet = new Set(expected);
+  const actualSet = new Set(actual);
+  const missing = expected.filter((key) => !actualSet.has(key));
+  const unexpected = actual.filter((key) => !expectedSet.has(key));
+
+  if (missing.length === 0 && unexpected.length === 0) {
+    return;
+  }
+
+  failures.push(
+    `Expected output keys ${formatList(expected)}, got ${formatList(actual)}. Missing: ${formatList(missing)}. Unexpected: ${formatList(unexpected)}.`,
+  );
+}
+
 function formatList(values: string[]): string {
-  return values.length > 0 ? `[${values.join(", ")}]` : "[]";
+  const limit = 20;
+  if (values.length === 0) {
+    return "[]";
+  }
+  const shown = values.slice(0, limit).join(", ");
+  const suffix = values.length > limit ? `, ... +${values.length - limit} more` : "";
+  return `[${shown}${suffix}]`;
 }
 
 function getErrorMessage(error: unknown): string {

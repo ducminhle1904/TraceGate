@@ -26,4 +26,6 @@ export const EvidenceRecordSchema = z
 
 export type EvidenceRecord = z.infer<typeof EvidenceRecordSchema>;
 
-export type EvidenceRecordInput = z.input<typeof EvidenceRecordSchema>;
+export type EvidenceRecordInput = Omit<z.input<typeof EvidenceRecordSchema>, "timestamp"> & {
+  timestamp?: string;
+};

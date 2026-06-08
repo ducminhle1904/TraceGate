@@ -599,7 +599,7 @@ describe("replay fixtures", () => {
     ).toEqual(
       expect.arrayContaining([
         "Expected evidence [approval-1:user-approval], got [].",
-        "Expected output keys [blocked], got [].",
+        "Expected output keys [blocked], got []. Missing: [blocked]. Unexpected: [].",
       ]),
     );
   });

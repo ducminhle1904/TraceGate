@@ -167,7 +167,10 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
     run: TraceGateRun,
     record: EvidenceRecordInput,
   ): Promise<EvidenceRecord> => {
-    const parsed = EvidenceRecordSchema.parse(record);
+    const parsed = EvidenceRecordSchema.parse({
+      ...record,
+      timestamp: record.timestamp ?? nowIso(),
+    });
     run.evidence.push(parsed);
     await writeEvent({
       type: "evidence.recorded",

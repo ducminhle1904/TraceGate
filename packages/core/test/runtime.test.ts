@@ -285,6 +285,29 @@ describe("createHarness runtime", () => {
     });
   });
 
+  it("auto-fills evidence timestamps when omitted", async () => {
+    const traceSink = createMemoryTraceSink();
+    const harness = createHarness({ traceSink });
+    await harness.startRun({ id: "run-evidence-auto-timestamp" });
+
+    const evidence = await harness.recordEvidence({
+      id: "evidence-auto-timestamp",
+      type: "system",
+      content: { ok: true },
+    });
+
+    expect(evidence.timestamp).toEqual(expect.any(String));
+    expect(() => new Date(evidence.timestamp).toISOString()).not.toThrow();
+    expect(traceSink.events.at(-1)).toMatchObject({
+      type: "evidence.recorded",
+      timestamp: evidence.timestamp,
+      record: {
+        id: "evidence-auto-timestamp",
+        timestamp: evidence.timestamp,
+      },
+    });
+  });
+
   it("starts a new run after finishing the previous run", async () => {
     const traceSink = createMemoryTraceSink();
     const harness = createHarness({ traceSink });

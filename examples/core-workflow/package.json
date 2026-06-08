@@ -1,0 +1,17 @@
+{
+  "name": "tracegate-example-core-workflow",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter @tracegate/core build && tsc -p tsconfig.json",
+    "start": "pnpm build && node dist/index.js"
+  },
+  "dependencies": {
+    "@tracegate/core": "workspace:*",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1"
+  }
+}

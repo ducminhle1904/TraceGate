@@ -197,6 +197,8 @@ import { createOpenTelemetryTraceSink } from "@tracegate/adapters/opentelemetry"
 | --- | --- | --- |
 | Basic tool policy | Review verdicts, blocked tool calls, matrix assertions | `pnpm --filter tracegate-example-basic-tool-policy test:matrix` |
 | Replay failure | Fixture replay against current behavior | `pnpm --filter tracegate-example-replay-failure test:replay` |
+| Core workflow | Read-only tool, denied side effect, JSONL trace sink, redaction | `pnpm --filter tracegate-example-core-workflow start` |
+| Compatibility static imports | ESM, tsx, CLI config loading, nested workspace package | `pnpm --filter tracegate-example-compatibility-static-imports test:all` |
 | OpenAI Agents SDK | Guarded function tool without model credentials | `pnpm --filter tracegate-example-openai-agents start` |
 | LangGraph JS | Guarded structured tool in a ToolNode-style flow | `pnpm --filter tracegate-example-langgraph-js start` |
 
@@ -238,11 +240,11 @@ pnpm examples:check
 
 ## Project Status
 
-TraceGate currently ships:
+This branch prepares:
 
-- `@tracegate/core@0.0.1`
-- `@tracegate/cli@0.0.1`
-- `@tracegate/adapters@0.0.1`
+- `@tracegate/core@0.0.2`
+- `@tracegate/cli@0.0.2`
+- `@tracegate/adapters@0.0.2`
 - Runnable local examples with no model/API credentials required.
 - A VitePress docs site built from the Markdown docs in this repo.
 

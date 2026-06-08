@@ -1,4 +1,5 @@
 import { access, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -7,6 +8,7 @@ import type { MatrixCase } from "@tracegate/core";
 import { evaluateMatrixAssertions } from "./assertions.js";
 import type { TraceGateConfig, TraceGateRunnerResult } from "./config.js";
 import { DEFAULT_CONFIG_FILE, loadTraceGateConfig } from "./config-loader.js";
+import { formatRunCaseError, getErrorMessage, isNodeError } from "./errors.js";
 import { runFixturesCommand, runReplayCommand } from "./replay-command.js";
 import {
   createMatrixReport,
@@ -50,7 +52,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return 1;
     }
   } catch (error) {
-    write(io.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
+    write(io.stderr, `${getErrorMessage(error)}\n`);
     return 1;
   }
 }
@@ -145,8 +147,16 @@ async function runDoctor(args: string[], io: CliIo): Promise<number> {
   const checks: Array<{ ok: boolean; message: string }> = [];
   const configPath = resolve(io.cwd, configValue ?? DEFAULT_CONFIG_FILE);
 
-  checks.push({ ok: true, message: "@tracegate/core package is linked" });
-  checks.push({ ok: await exists(configPath), message: `config exists: ${configPath}` });
+  checks.push(checkProjectPackageResolution(io.cwd, "@tracegate/core"));
+  checks.push(checkProjectPackageResolution(io.cwd, "@tracegate/cli/config"));
+
+  const configExists = await exists(configPath);
+  checks.push({
+    ok: configExists,
+    message: configExists
+      ? `config exists: ${configPath}`
+      : `config missing: ${configPath}. Run "tracegate init" or pass --config <path>.`,
+  });
 
   try {
     const loaded = await loadTraceGateConfig({
@@ -159,7 +169,7 @@ async function runDoctor(args: string[], io: CliIo): Promise<number> {
   } catch (error) {
     checks.push({
       ok: false,
-      message: `config validation failed: ${error instanceof Error ? error.message : String(error)}`,
+      message: `config check failed: ${getErrorMessage(error)}`,
     });
   }
 
@@ -168,6 +178,22 @@ async function runDoctor(args: string[], io: CliIo): Promise<number> {
   }
 
   return checks.every((check) => check.ok) ? 0 : 1;
+}
+
+function checkProjectPackageResolution(
+  cwd: string,
+  specifier: string,
+): { ok: boolean; message: string } {
+  try {
+    const requireFromProject = createRequire(resolve(cwd, "package.json"));
+    requireFromProject.resolve(specifier);
+    return { ok: true, message: `${specifier} resolves from project` };
+  } catch (error) {
+    return {
+      ok: false,
+      message: `${specifier} does not resolve from this project: ${getErrorMessage(error)}. Install TraceGate packages in this project and rerun pnpm install.`,
+    };
+  }
 }
 
 function filterCases(
@@ -269,7 +295,7 @@ async function runMatrixCase(
       traceEventCount = assertionResult.traceEventCount;
     }
   } catch (error) {
-    failures.push(`runCase threw: ${error instanceof Error ? error.message : String(error)}`);
+    failures.push(`runCase threw: ${formatRunCaseError(error)}`);
   }
 
   const outputSummary = summarizeOutput(result?.output);
@@ -299,10 +325,6 @@ function write(stream: WriteableStream, value: string): void {
 
 function now(io: CliIo): Date {
   return io.now?.() ?? new Date();
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }
 
 function helpText(): string {
