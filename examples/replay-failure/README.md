@@ -22,6 +22,11 @@ pnpm --filter tracegate-example-replay-failure fixtures:create
 The replay command prints a JSON report with `status: "passed"`, one case, five trace
 events, and zero failures.
 
+## Why This Matters In CI
+
+Replay catches drift when code, prompts, model behavior, or dependencies change the tool-call
+sequence or output shape that a reviewed trace fixture expects.
+
 ## Demonstrates
 
 - JSONL trace parsing.

@@ -21,16 +21,20 @@
     "lint": "biome check --files-ignore-unknown=true .",
     "release:smoke": "node scripts/release-smoke.mjs",
     "release:smoke:registry": "node scripts/release-smoke.mjs --registry",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release-packages": "changeset publish",
     "type-check": "pnpm -r --if-present --filter './packages/*' type-check",
     "test": "pnpm -r --if-present --filter './packages/*' test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.6",
+    "@changesets/cli": "^2.31.0",
     "@tracegate/cli": "workspace:*",
     "@tracegate/core": "workspace:*",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitepress": "^1.6.4",
-    "tsx": "^4.20.6",
     "vitest": "^4.0.15"
   }
 }

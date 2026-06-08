@@ -1,23 +1,25 @@
 # Comparisons
 
-TraceGate is designed to complement existing LLM observability, eval, red-team, and guardrail tools.
+TraceGate is a CI-first contract, replay, and policy harness for agent tool calls. It is designed
+to complement existing LLM orchestration, app-builder, observability, eval, red-team, and guardrail
+tools.
 
 ## Positioning
 
 | Category | Examples | TraceGate relationship |
 | --- | --- | --- |
-| Observability | LangSmith, Langfuse, Phoenix, Helicone | Export traces and policy events to them; do not replace their dashboards. |
-| Evals | Braintrust, Promptfoo | Add contract-first tool behavior checks and replay fixtures. |
-| Gateway guardrails | Portkey, Invariant, Pangea, NeMo Guardrails | Complement request/response or gateway policy with local tool-call contracts. |
-| Agent frameworks | OpenAI Agents SDK, LangGraph, Mastra | Wrap tool execution without replacing the framework. |
+| Agent orchestration | LangGraph, OpenAI Agents SDK, Mastra | Keep ownership of graph/runtime execution; TraceGate wraps tool boundaries and verifies behavior. |
+| App builders | Dify and similar workflow builders | Build and operate apps elsewhere; TraceGate stays a developer harness for versioned contracts and CI checks. |
+| Observability and evals | Langfuse, LangSmith, Phoenix, Braintrust, Promptfoo | Export traces or eval rows when useful; TraceGate keeps local JSONL, replay fixtures, and policy gates as the source of truth. |
+| Gateway guardrails | Portkey, Invariant, Pangea, NeMo Guardrails | Complement request/response or gateway policy with local tool-call contracts before side effects execute. |
 
 ## TraceGate Focus
 
-- Local-first developer harness.
+- CI-first developer harness.
 - Framework-neutral contracts.
 - Tool-call policy before execution.
 - JSONL traces that can become replay fixtures.
-- CI behavior gates.
+- Versioned behavior gates that fail pull requests when contracts, policy, or replay expectations drift.
 
 ## Non-Goals
 
@@ -25,6 +27,8 @@ TraceGate is designed to complement existing LLM observability, eval, red-team, 
 - Prompt playground.
 - Model gateway.
 - Agent graph runtime.
+- No-code application builder.
+- Replacement for authorization, IAM, sandboxing, or security review.
 
 ## Phase 6 Integrations
 

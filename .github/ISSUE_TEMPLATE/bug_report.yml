@@ -1,0 +1,39 @@
+name: Bug report
+description: Report a TraceGate behavior, CLI, replay, policy, adapter, or docs issue.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include secrets, API keys, customer data, or private traces in this issue.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Provide the smallest command, config, trace, or example that reproduces the issue.
+      placeholder: |
+        pnpm --filter tracegate-example-basic-tool-policy test:matrix
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include TraceGate package versions, Node version, pnpm version, and OS.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or trace excerpt
+      description: Paste a minimal sanitized excerpt. Remove secrets and private data.
+      render: shell

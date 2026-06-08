@@ -28,3 +28,8 @@ Expected output:
 - `rawSecretFails: true`
 - `redactedPlaceholderPasses: true`
 - a local trace at `traces/core-workflow.jsonl`
+
+Why this matters in CI:
+
+This example proves the framework-neutral runtime can block side effects, preserve ordered trace
+events, and keep secret-like values out of checked trace artifacts.

@@ -7,11 +7,13 @@
 [![core npm](https://img.shields.io/npm/v/@tracegate/core?label=%40tracegate%2Fcore)](https://www.npmjs.com/package/@tracegate/core)
 [![cli npm](https://img.shields.io/npm/v/@tracegate/cli?label=%40tracegate%2Fcli)](https://www.npmjs.com/package/@tracegate/cli)
 [![adapters npm](https://img.shields.io/npm/v/@tracegate/adapters?label=%40tracegate%2Fadapters)](https://www.npmjs.com/package/@tracegate/adapters)
+[![CI](https://github.com/ducminhle1904/TraceGate/actions/workflows/ci.yml/badge.svg)](https://github.com/ducminhle1904/TraceGate/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-0f172a)](LICENSE)
+[![docs](https://img.shields.io/badge/docs-repo-2563eb)](docs/index.md)
 
-TraceGate is a local-first harness for testing and controlling tool-using AI agents. It lets
-developers define tool contracts, enforce policy gates, redact trace data, capture JSONL
-traces, run matrix tests, and replay behavior in CI without replacing their agent framework.
+TraceGate is a CI-first contract, replay, and policy harness for agent tool calls. It lets
+developers define tool contracts, enforce policy gates, redact trace data, capture JSONL traces,
+run matrix tests, and replay behavior in CI without replacing their agent framework.
 
 AI agent demos usually fail in the spaces between final answers: the model calls the wrong
 tool, skips evidence, sends a risky action for approval too late, leaks a token into logs, or
@@ -57,19 +59,27 @@ pnpm add @tracegate/adapters
 
 ## 60-Second Quickstart
 
-Create a starter matrix config, then run it through the CLI:
+Run a complete local proof from this repository:
+
+```bash
+pnpm install
+pnpm build
+pnpm --filter tracegate-example-basic-tool-policy test:matrix
+pnpm --filter tracegate-example-basic-tool-policy test:replay
+```
+
+Expected result:
+
+- `test:matrix` prints a passed JSON report for a blocked high-risk `sendEmail` call.
+- `test:replay` prints a passed JSON report for the checked replay fixture.
+- The contract was loaded, the policy gate returned `review`, the tool was blocked before
+  execution, and replay confirmed the stored behavior is still stable.
+
+For a new project, create a starter matrix config and run it through the CLI:
 
 ```bash
 pnpm exec tracegate init
 pnpm exec tracegate test
-```
-
-For this repository:
-
-```bash
-pnpm install
-pnpm examples:check
-pnpm docs:build
 ```
 
 ## Runtime Example
@@ -298,6 +308,15 @@ pnpm examples:check
 | Evals | Braintrust, Promptfoo | Add contract-first tool behavior checks and replay fixtures. |
 | Gateway guardrails | Portkey, Invariant, Pangea, NeMo Guardrails | Complement request/response policy with local tool-call contracts. |
 
+## Production Readiness
+
+TraceGate is designed to make agent tool-call behavior reviewable in CI: contracts define the
+allowed boundary, policy gates decide whether a call can execute, traces preserve what happened,
+and replay fixtures catch drift after prompt, model, dependency, or code changes.
+
+TraceGate does not replace agent orchestration, application authorization, IAM, provider gateway
+guardrails, observability dashboards, runtime sandboxing, or human review for high-risk actions.
+
 ## Documentation
 
 - [Docs home](docs/index.md)
@@ -319,14 +338,15 @@ pnpm examples:check
 - [Observability integrations](docs/integrations/observability.md)
 - [Comparisons](docs/comparisons.md)
 - [Release checklist](docs/guides/release-checklist.md)
+- [Security policy](SECURITY.md)
 
 ## Project Status
 
 This branch prepares:
 
-- `@tracegate/core@0.3.0`
-- `@tracegate/cli@0.3.0`
-- `@tracegate/adapters@0.3.0`
+- `@tracegate/core@0.3.1`
+- `@tracegate/cli@0.3.1`
+- `@tracegate/adapters@0.3.1`
 - Runnable local examples with no model/API credentials required.
 - A VitePress docs site built from the Markdown docs in this repo.
 

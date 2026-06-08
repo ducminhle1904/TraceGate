@@ -15,6 +15,11 @@ pnpm --filter tracegate-example-basic-tool-policy test:replay
 
 Both commands print JSON reports with `status: "passed"` and zero failures.
 
+## Why This Matters In CI
+
+This is the smallest proof that a risky tool contract, policy verdict, redaction check, and replay
+fixture can fail or pass a pull request without calling a model provider.
+
 ## Demonstrates
 
 - `sendEmail` is attempted and intercepted.

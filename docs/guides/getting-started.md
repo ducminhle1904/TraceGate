@@ -1,34 +1,47 @@
 # Getting Started
 
-TraceGate provides core contracts, runtime wrappers, policy/redaction defaults, JSONL traces,
-matrix testing, replay fixtures, framework adapters, and observability exports.
+TraceGate is a CI-first contract, replay, and policy harness for agent tool calls. It provides
+core contracts, runtime wrappers, policy/redaction defaults, JSONL traces, matrix testing,
+replay fixtures, framework adapters, and observability exports.
 
-## Current Setup
+## 60-Second Repo Flow
 
 ```bash
 pnpm install
-pnpm type-check
-pnpm lint
-pnpm test
+pnpm build
+pnpm --filter tracegate-example-basic-tool-policy test:matrix
+pnpm --filter tracegate-example-basic-tool-policy test:replay
 ```
 
-## Local Matrix Flow
+## What Just Happened
+
+- TraceGate loaded the `sendEmail` tool contract from the basic policy example.
+- The policy evaluator returned a `review` verdict for the high-risk call.
+- The harness blocked execution before the side-effecting tool ran.
+- Replay checked that the stored JSONL behavior still matches the expected fixture.
+
+## New Project Flow
 
 ```bash
 pnpm add @tracegate/core
 pnpm add -D @tracegate/cli
-tracegate init
-tracegate test
+pnpm exec tracegate init
+pnpm exec tracegate test
 ```
 
-## Local Repo Flow
+## Full Local Verification
 
 From this repository:
 
 ```bash
 pnpm install
-pnpm examples:check
+pnpm lint
+pnpm type-check
+pnpm test
+pnpm build
 pnpm docs:build
+pnpm examples:check
+pnpm release:smoke
 ```
 
 ## What To Expect

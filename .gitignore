@@ -1,9 +1,10 @@
 .serena/
 node_modules/
 dist/
+examples/*/dist/
+examples/*/tsconfig.tsbuildinfo
 .turbo/
 .env
 .env.*
 coverage/
 *.log
-

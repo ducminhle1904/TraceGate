@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a TraceGate contract, replay, policy, adapter, CLI, or docs improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Which agent tool-call testing problem should TraceGate solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the smallest useful behavior or interface.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Core contracts
+        - Runtime gate
+        - CLI matrix tests
+        - Replay fixtures
+        - Policy/redaction
+        - Framework adapters
+        - Observability exports
+        - Documentation/examples
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Which command or example should prove the feature works?
