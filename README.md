@@ -283,9 +283,9 @@ pnpm examples:check
 
 This branch prepares:
 
-- `@tracegate/core@0.1.0`
-- `@tracegate/cli@0.1.0`
-- `@tracegate/adapters@0.1.0`
+- `@tracegate/core@0.1.1`
+- `@tracegate/cli@0.1.1`
+- `@tracegate/adapters@0.1.1`
 - Runnable local examples with no model/API credentials required.
 - A VitePress docs site built from the Markdown docs in this repo.
 

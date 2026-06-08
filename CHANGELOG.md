@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1
+
+- Fixed publish metadata so `@tracegate/cli` and `@tracegate/adapters` depend on the npm `@tracegate/core` version instead of `workspace:*`.
+- Added a release smoke guard that packs packages, rejects workspace protocol dependencies, and verifies a temp consumer can import core/config and run the CLI.
+- Improved CLI human diagnostics for denied approval and replay output assertion failures while keeping JSON/JUnit report shapes stable.
+- Expanded docs for approval lifecycle semantics, manifest registry adapters, and evidence timestamp helpers.
+
 ## 0.1.0
 
 - Added placeholder-aware secret detection options for redacted trace fixtures.

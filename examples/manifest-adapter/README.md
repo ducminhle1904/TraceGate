@@ -64,3 +64,37 @@ defineToolContractFromManifest(descriptor, {
   metadata: (tool) => ({ source: tool.metadata?.source ?? "agent-tool-registry" }),
 });
 ```
+
+NodeTrader-style registry with separate Zod schemas:
+
+```ts
+const schemas = {
+  readPosition: ReadPositionInput,
+  placeOrder: PlaceOrderInput,
+};
+
+defineToolContractFromManifest(manifest, {
+  name: (tool) => tool.name,
+  description: (tool) => tool.description,
+  riskTier: (tool) => tool.policy.riskTier,
+  riskMapping: {
+    read: "read",
+    draft: "medium",
+    canvas_mutation: "medium",
+    persisted_write: "medium",
+    trading_action: "high",
+    admin_action: "critical",
+  },
+  inputSchema: (tool) => schemas[tool.name],
+  requiresApproval: (tool) =>
+    tool.policy.riskTier === "trading_action" || tool.policy.riskTier === "admin_action",
+  requiredEvidence: (tool) => [tool.policy.permission],
+  metadata: (tool) => ({
+    permission: tool.policy.permission,
+    executionLocation: tool.executionLocation,
+  }),
+});
+```
+
+TraceGate records and tests policy expectations around these contracts. It does not replace
+application authorization, IAM, exchange permissions, or business approval rules.

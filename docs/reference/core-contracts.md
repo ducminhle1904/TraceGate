@@ -211,6 +211,14 @@ createEvidenceRecord(
 );
 ```
 
+Required fields are `id`, `type`, and `content`. Optional fields include `timestamp`, `runId`,
+`source`, and JSON `metadata`. When `timestamp` is omitted, `createEvidenceRecord()` uses
+`options.now?.()` or the current ISO time.
+
+Use this helper when creating standalone fixtures or evidence outside a harness. Inside an active
+harness, calling `recordEvidence({ id, type, content })` directly is still fine because it delegates
+to the same timestamp-filling helper.
+
 `EvidenceRecordSchema` remains strict for persisted records and still requires `timestamp`.
 
 ### `EvidenceRecordSchema` / `EvidenceRecord`

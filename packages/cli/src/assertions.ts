@@ -9,6 +9,7 @@ import type {
 } from "@tracegate/core";
 
 import type { TraceGateRunnerResult } from "./config.js";
+import { formatLimited, formatPolicyDiagnostic } from "./errors.js";
 
 export interface MatrixAssertionInput {
   case: MatrixCase;
@@ -158,7 +159,39 @@ function requirePolicyVerdict(
     return undefined;
   }
 
-  return `Expected policy verdict "${expected}", got ${actual.join(", ") || "(none)"}.`;
+  const details = formatPolicyVerdictDetails(records);
+  return `Expected policy verdict "${expected}", got ${actual.join(", ") || "(none)"}.${details ? ` ${details}` : ""}`;
+}
+
+function formatPolicyVerdictDetails(records: ToolCallRecord[]): string {
+  const details = records
+    .filter((record) => record.policyVerdict)
+    .map((record) => {
+      const verdict = record.policyVerdict;
+      if (!verdict) {
+        return "";
+      }
+      const diagnostics = verdict.diagnostics ?? [];
+      const approval = [...diagnostics]
+        .reverse()
+        .map((diagnostic) => diagnostic.approval)
+        .find((state): state is "approved" | "denied" | "missing" => state !== undefined);
+      return [
+        `tool=${record.toolName}`,
+        `riskTier=${record.riskTier}`,
+        `finalVerdict=${verdict.status}`,
+        approval ? `approval=${approval}` : undefined,
+        `toolExecuted=${record.status !== "blocked"}`,
+        diagnostics.length > 0
+          ? `diagnostics=${formatLimited(diagnostics.map(formatPolicyDiagnostic))}`
+          : undefined,
+      ]
+        .filter((part): part is string => part !== undefined)
+        .join(" ");
+    })
+    .filter((detail) => detail.length > 0);
+
+  return details.length > 0 ? `Policy details: ${formatLimited(details)}.` : "";
 }
 
 function evidenceToSearchText(record: EvidenceRecord): string {

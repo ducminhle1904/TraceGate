@@ -1,4 +1,4 @@
-import { type PolicyVerdict, TraceGateRuntimeError } from "@tracegate/core";
+import { type PolicyDiagnostic, type PolicyVerdict, TraceGateRuntimeError } from "@tracegate/core";
 
 const DETAIL_LIMIT = 5;
 
@@ -16,14 +16,7 @@ export function formatRunCaseError(error: unknown): string {
         parts.push(`reasons=${formatLimited(verdict.reasons)}`);
       }
       if (verdict.diagnostics && verdict.diagnostics.length > 0) {
-        parts.push(
-          `diagnostics=${formatLimited(
-            verdict.diagnostics.map((diagnostic) => {
-              const approval = diagnostic.approval ? ` approval=${diagnostic.approval}` : "";
-              return `${diagnostic.source}/${diagnostic.rule}: ${diagnostic.message}${approval}`;
-            }),
-          )}`,
-        );
+        parts.push(`diagnostics=${formatPolicyDiagnostics(verdict.diagnostics)}`);
       }
     }
     if (error.cause !== undefined) {
@@ -61,7 +54,16 @@ function isPolicyVerdictLike(verdict: unknown): verdict is PolicyVerdict {
   );
 }
 
-function formatLimited(values: string[]): string {
+export function formatPolicyDiagnostics(diagnostics: PolicyDiagnostic[]): string {
+  return formatLimited(diagnostics.map(formatPolicyDiagnostic));
+}
+
+export function formatPolicyDiagnostic(diagnostic: PolicyDiagnostic): string {
+  const approval = diagnostic.approval ? ` approval=${diagnostic.approval}` : "";
+  return `${diagnostic.source}:${diagnostic.rule}: ${diagnostic.message}${approval}`;
+}
+
+export function formatLimited(values: string[]): string {
   const shown = values.slice(0, DETAIL_LIMIT).join(" | ");
   const suffix = values.length > DETAIL_LIMIT ? ` | +${values.length - DETAIL_LIMIT} more` : "";
   return `${shown}${suffix}`;

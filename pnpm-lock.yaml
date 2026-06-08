@@ -167,7 +167,7 @@ importers:
         specifier: ^1.9.1
         version: 1.9.1
       '@tracegate/core':
-        specifier: workspace:*
+        specifier: workspace:0.1.1
         version: link:../core
       zod:
         specifier: ^4.1.13
@@ -195,7 +195,7 @@ importers:
   packages/cli:
     dependencies:
       '@tracegate/core':
-        specifier: workspace:*
+        specifier: workspace:0.1.1
         version: link:../core
       jiti:
         specifier: ^2.6.1

@@ -31,10 +31,15 @@ When a wrapped tool is called:
 - `warn`: execute the real tool and preserve the warning verdict in trace records.
 - `block`: do not execute; emit `tool.blocked`; throw `TraceGatePolicyBlockedError`.
 - `review` with approving handler: re-evaluate policy with `approval: "approved"` and execute if final verdict allows.
+- `review` with denying handler: re-evaluate policy with `approval: "denied"`; the final verdict is `block`, the tool is not executed, and diagnostics include approval denial plus `runtime/execution-skipped`.
 - `review` without handler or without approval: do not execute; emit `tool.blocked`; throw `TraceGateReviewRequiredError`.
 
 `PolicyVerdict.diagnostics` may explain contract, policy, approval-handler, and runtime decisions.
 The CLI prints these diagnostics in human failure output while JSON and JUnit report shapes stay stable.
+
+This distinction matters in CI: "policy requires review" is the initial policy decision,
+"approval was denied" is the approval-handler result, and "tool was blocked" is the final
+runtime outcome. A denied approval is expected to end as `block`, not `review`.
 
 ## Error Behavior
 

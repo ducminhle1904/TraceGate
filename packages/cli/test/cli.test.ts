@@ -136,8 +136,77 @@ export default {
 
       expect(io.stdoutText()).toContain("riskTier=high");
       expect(io.stdoutText()).toContain("reasons=Blocked by test policy.");
-      expect(io.stdoutText()).toContain("diagnostics=policy/blocked-risk-tier");
-      expect(io.stdoutText()).toContain("runtime/execution-skipped");
+      expect(io.stdoutText()).toContain("diagnostics=policy:blocked-risk-tier");
+      expect(io.stdoutText()).toContain("runtime:execution-skipped");
+    });
+  });
+
+  it("prints denied approval diagnostics from matrix verdict drift", async () => {
+    await withTempDir(async (cwd) => {
+      await writeConfig(
+        cwd,
+        `import {
+  createHarness,
+  createMemoryTraceSink,
+  createPolicyEvaluator,
+  definePolicy,
+  defineToolContract,
+} from "@tracegate/core";
+import { z } from "zod";
+
+const contract = defineToolContract({
+  name: "sendEmail",
+  riskTier: "high",
+  inputSchema: z.object({ to: z.string() }),
+});
+
+export default {
+  matrix: [
+    {
+      id: "approval-denied",
+      prompt: "Send a guarded email",
+      expect: { requiredPolicyVerdict: "review" },
+    },
+  ],
+  async runCase() {
+    const traceSink = createMemoryTraceSink();
+    let toolExecuted = false;
+    const harness = createHarness({
+      traceSink,
+      policyEvaluator: createPolicyEvaluator(
+        definePolicy({ requireApprovalForRiskTiers: ["high"] }),
+      ),
+      approvalHandler: () => ({ status: "denied", reason: "Approver rejected the email." }),
+    });
+    const sendEmail = harness.wrapTool(contract, async () => {
+      toolExecuted = true;
+      return { sent: true };
+    });
+    try {
+      await sendEmail({ to: "customer@example.com" });
+    } catch {
+      // Matrix assertions inspect the trace; this case intentionally fails expected verdict.
+    }
+    return {
+      output: { toolExecuted },
+      events: traceSink.events,
+    };
+  },
+};`,
+      );
+      const io = createIo(cwd);
+
+      await expect(runCli(["test"], io)).resolves.toBe(1);
+
+      expect(io.stdoutText()).toContain('Expected policy verdict "review", got block.');
+      expect(io.stdoutText()).toContain("tool=sendEmail");
+      expect(io.stdoutText()).toContain("riskTier=high");
+      expect(io.stdoutText()).toContain("finalVerdict=block");
+      expect(io.stdoutText()).toContain("approval=denied");
+      expect(io.stdoutText()).toContain("toolExecuted=false");
+      expect(io.stdoutText()).toContain("policy:approval-denied");
+      expect(io.stdoutText()).toContain("approval-handler:approval-denied");
+      expect(io.stdoutText()).toContain("runtime:execution-skipped");
     });
   });
 
@@ -619,6 +688,137 @@ export default {
       });
       await expect(readFile(join(cwd, "replay.xml"), "utf8")).resolves.toContain(
         '<testcase classname="TraceGate.Matrix" name="replay-pass"',
+      );
+    });
+  });
+
+  it("replays flexible output expectations", async () => {
+    await withTempDir(async (cwd) => {
+      await writeConfig(
+        cwd,
+        `export default {
+  matrix: [],
+  async runCase() {
+    return {
+      output: {
+        answer: "blocked",
+        metrics: {
+          secretLeakFindingCount: 0,
+          traceIncludesRawSecret: false,
+        },
+        diagnostics: {
+          rules: ["policy:approval-denied"],
+        },
+        debug: {
+          latencyMs: 12,
+        },
+      },
+      events: [${toolEvent("tool.started", "started", "sendEmail", {}, "allow")}],
+    };
+  },
+};`,
+      );
+      await writeFile(
+        join(cwd, "fixture.ts"),
+        replayFixtureModule({
+          expect: {
+            toolSequence: ["sendEmail"],
+            toolStatuses: { sendEmail: ["started"] },
+            policyVerdicts: { sendEmail: ["allow"] },
+            evidence: [],
+            outputKeysMode: "subset",
+            outputKeys: [
+              "answer",
+              "metrics.secretLeakFindingCount",
+              "metrics.traceIncludesRawSecret",
+            ],
+            ignoredOutputKeys: ["debug.latencyMs"],
+            optionalOutputKeys: ["diagnostics.approval"],
+            absentOutputKeys: ["debug.rawSecret"],
+            outputValues: {
+              "metrics.secretLeakFindingCount": 0,
+              "metrics.traceIncludesRawSecret": false,
+            },
+            traceEventCount: 1,
+          },
+          captured: {
+            traceEventCount: 1,
+          },
+        }),
+        "utf8",
+      );
+
+      const io = createIo(cwd);
+      await expect(runCli(["replay", "fixture.ts", "--json"], io)).resolves.toBe(0);
+      expect(JSON.parse(io.stdoutText()).status).toBe("passed");
+    });
+  });
+
+  it("reports replay output key and value assertion failures clearly", async () => {
+    await withTempDir(async (cwd) => {
+      await writeConfig(
+        cwd,
+        `export default {
+  matrix: [],
+  async runCase() {
+    return {
+      output: {
+        metrics: {
+          secretLeakFindingCount: 1,
+          traceIncludesRawSecret: true,
+        },
+        debug: {
+          latencyMs: 12,
+          rawSecret: "secret-token",
+        },
+      },
+      events: [${toolEvent("tool.started", "started", "sendEmail", {}, "allow")}],
+    };
+  },
+};`,
+      );
+      await writeFile(
+        join(cwd, "fixture.ts"),
+        replayFixtureModule({
+          expect: {
+            toolSequence: ["sendEmail"],
+            toolStatuses: { sendEmail: ["started"] },
+            policyVerdicts: { sendEmail: ["allow"] },
+            evidence: [],
+            outputKeysMode: "exact",
+            outputKeys: [
+              "summary",
+              "metrics.secretLeakFindingCount",
+              "metrics.traceIncludesRawSecret",
+            ],
+            ignoredOutputKeys: ["debug.latencyMs"],
+            optionalOutputKeys: ["diagnostics.rules"],
+            absentOutputKeys: ["debug.rawSecret"],
+            outputValues: {
+              "metrics.secretLeakFindingCount": 0,
+              "metrics.traceIncludesRawSecret": false,
+            },
+            traceEventCount: 1,
+          },
+          captured: {
+            traceEventCount: 1,
+          },
+        }),
+        "utf8",
+      );
+
+      const io = createIo(cwd);
+      await expect(runCli(["replay", "fixture.ts"], io)).resolves.toBe(1);
+
+      expect(io.stdoutText()).toContain("Missing: [summary]");
+      expect(io.stdoutText()).toContain("Unexpected: [debug.rawSecret");
+      expect(io.stdoutText()).toContain("Ignored: [debug.latencyMs]");
+      expect(io.stdoutText()).toContain('Expected output path "debug.rawSecret" to be absent');
+      expect(io.stdoutText()).toContain(
+        'Expected output path "metrics.secretLeakFindingCount" to equal 0, got 1.',
+      );
+      expect(io.stdoutText()).toContain(
+        'Expected output path "metrics.traceIncludesRawSecret" to equal false, got true.',
       );
     });
   });
