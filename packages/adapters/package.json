@@ -1,6 +1,6 @@
 {
   "name": "@tracegate/adapters",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Framework adapters and observability exports for TraceGate.",
   "type": "module",
   "license": "MIT",
@@ -83,7 +83,7 @@
     "@langchain/core": "^1.1.48",
     "@openai/agents": "^0.11.6",
     "@opentelemetry/api": "^1.9.1",
-    "@tracegate/core": "workspace:0.5.1",
+    "@tracegate/core": "0.5.2",
     "zod": "^4.1.13"
   },
   "peerDependencies": {

@@ -166,7 +166,7 @@ function packLocalPackages(tempRoot) {
   mkdirSync(packDir, { recursive: true });
 
   for (const [key, packageDir] of Object.entries(packageDirs)) {
-    const output = run("pnpm", ["pack", "--pack-destination", packDir], {
+    const output = run("npm", ["pack", "--pack-destination", packDir], {
       cwd: join(repoRoot, packageDir),
       capture: true,
     }).trim();

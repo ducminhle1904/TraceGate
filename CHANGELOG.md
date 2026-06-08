@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2
+
+- Fixed npm publish metadata so CLI and adapters depend on the real npm `@tracegate/core` version instead of a workspace protocol.
+- Switched the release smoke guard to validate npm-packaged manifests, matching the publish path.
+
 ## 0.5.1
 
 - Improved `tracegate init` to generate a runnable config, runtime replay fixture, JSONL trace, and redaction check.
