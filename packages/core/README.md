@@ -32,6 +32,26 @@ const searchKnowledgeBase = harness.wrapTool(contract, async ({ query }) => {
 });
 ```
 
+## CommonJS Apps
+
+`@tracegate/core` is ESM-first. CommonJS apps can lazy-load the runtime helper without changing
+the whole project to `moduleResolution: "node16"` or `moduleResolution: "nodenext"`:
+
+```ts
+import type { TraceGateCoreModule } from "@tracegate/core/cjs";
+
+const { loadTraceGateCore } = require("@tracegate/core/cjs") as {
+  loadTraceGateCore(): Promise<TraceGateCoreModule>;
+};
+
+async function main() {
+  const { createRuntimeGate, defineToolContract } = await loadTraceGateCore();
+}
+```
+
+This pattern is intended for legacy CommonJS/Jest hosts. New ESM projects should prefer static
+imports from `@tracegate/core`.
+
 ## Exports
 
 - tool contracts and risk tiers

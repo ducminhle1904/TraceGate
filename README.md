@@ -31,6 +31,8 @@ contracts that can be reviewed, tested, and replayed.
 
 TraceGate is intentionally framework-neutral. Use it with OpenAI Agents SDK, LangGraph,
 your own agent loop, or any runner that can call a JavaScript function.
+ESM apps can statically import `@tracegate/core`; legacy CommonJS hosts can use the typed
+lazy loader at `@tracegate/core/cjs`.
 
 ## What It Is Not
 
@@ -309,9 +311,9 @@ pnpm examples:check
 
 This branch prepares:
 
-- `@tracegate/core@0.2.0`
-- `@tracegate/cli@0.2.0`
-- `@tracegate/adapters@0.2.0`
+- `@tracegate/core@0.2.1`
+- `@tracegate/cli@0.2.1`
+- `@tracegate/adapters@0.2.1`
 - Runnable local examples with no model/API credentials required.
 - A VitePress docs site built from the Markdown docs in this repo.
 

@@ -50,6 +50,9 @@ try {
   run("pnpm", ["add", "-D", packages.core, packages.cli, packages.adapters], {
     cwd: consumerDir,
   });
+  run("pnpm", ["add", "-D", "typescript", "@types/node"], {
+    cwd: consumerDir,
+  });
   writeFileSync(
     join(consumerDir, "tracegate.config.ts"),
     `import { defineMatrix } from "@tracegate/core";
@@ -62,6 +65,44 @@ export default defineTraceGateConfig({
   },
 });
 `,
+  );
+  writeFileSync(
+    join(consumerDir, "legacy-cjs.ts"),
+    `import type { TraceGateCoreModule } from "@tracegate/core/cjs";
+
+const { loadTraceGateCore } = require("@tracegate/core/cjs") as {
+  loadTraceGateCore(): Promise<TraceGateCoreModule>;
+};
+
+async function main() {
+  const core = await loadTraceGateCore();
+  const gate = core.createRuntimeGate({ mode: "off" });
+  return gate.mode;
+}
+
+void main();
+`,
+  );
+  writeFileSync(
+    join(consumerDir, "tsconfig.legacy-cjs.json"),
+    JSON.stringify(
+      {
+        compilerOptions: {
+          module: "commonjs",
+          moduleResolution: "node",
+          target: "ES2022",
+          strict: true,
+          noEmit: true,
+          esModuleInterop: true,
+          skipLibCheck: false,
+          types: ["node"],
+          ignoreDeprecations: "6.0",
+        },
+        include: ["legacy-cjs.ts"],
+      },
+      null,
+      2,
+    ),
   );
 
   run(
@@ -87,6 +128,20 @@ export default defineTraceGateConfig({
   );
   run("pnpm", ["exec", "tracegate", "--help"], { cwd: consumerDir });
   run("pnpm", ["exec", "tracegate", "doctor"], { cwd: consumerDir });
+  run("pnpm", ["exec", "tsc", "-p", "tsconfig.legacy-cjs.json"], { cwd: consumerDir });
+  run(
+    "node",
+    [
+      "-e",
+      [
+        'const { loadTraceGateCore } = require("@tracegate/core/cjs");',
+        "loadTraceGateCore().then((core) => {",
+        '  if (typeof core.createRuntimeGate !== "function") throw new Error("legacy CJS require failed");',
+        "});",
+      ].join(" "),
+    ],
+    { cwd: consumerDir },
+  );
 
   console.log(
     registryVersion === undefined

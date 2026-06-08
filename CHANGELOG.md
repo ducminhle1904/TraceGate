@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Added legacy TypeScript declaration compatibility for `@tracegate/core/cjs` projects using `moduleResolution: "node"`.
+- Documented the typed CommonJS lazy-load pattern for apps that cannot switch to `node16` or `nodenext` yet.
+- Extended release smoke coverage with a temp CommonJS TypeScript consumer that compiles typed `require("@tracegate/core/cjs")`.
+
 ## 0.2.0
 
 - Added `createRuntimeGate()` for gradual production rollout with `off`, `observe`, `shadow`, and targeted `enforce` modes.

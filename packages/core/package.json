@@ -1,6 +1,6 @@
 {
   "name": "@tracegate/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Core contracts, schemas, and policy primitives for TraceGate.",
   "type": "module",
   "license": "MIT",
@@ -34,6 +34,16 @@
       "types": "./cjs/index.d.cts",
       "require": "./cjs/index.cjs",
       "default": "./cjs/index.cjs"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "cjs": [
+        "cjs/index.d.ts"
+      ],
+      "cjs/index": [
+        "cjs/index.d.ts"
+      ]
     }
   },
   "files": [

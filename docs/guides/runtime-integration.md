@@ -137,6 +137,30 @@ const gate = createRuntimeGate({
 This keeps the host app stable while matrix tests can still inspect trace events and policy
 diagnostics.
 
+## CommonJS Hosts
+
+TraceGate is ESM-first. If an existing app still uses CommonJS, Jest, or
+`moduleResolution: "node"`, use the CJS lazy loader instead of `require("@tracegate/core")`:
+
+```ts
+import type { TraceGateCoreModule } from "@tracegate/core/cjs";
+
+const { loadTraceGateCore } = require("@tracegate/core/cjs") as {
+  loadTraceGateCore(): Promise<TraceGateCoreModule>;
+};
+
+async function createGate() {
+  const { createRuntimeGate, createStructuredLoggerTraceSink } = await loadTraceGateCore();
+  return createRuntimeGate({
+    mode: "observe",
+    traceSink: createStructuredLoggerTraceSink({ log: (event) => logger.info({ event }) }),
+  });
+}
+```
+
+This keeps runtime loading asynchronous at the boundary while preserving typed access to the
+TraceGate ESM API.
+
 ## Boundaries
 
 TraceGate should guard tool-call behavior and produce local replay evidence. It does not replace
