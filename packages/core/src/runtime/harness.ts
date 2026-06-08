@@ -1,5 +1,3 @@
-import type { z } from "zod";
-
 import type { EvidenceRecord, EvidenceRecordInput } from "../evidence/evidence.js";
 import { createEvidenceRecord } from "../evidence/evidence.js";
 import type { ApprovalState, EvaluatePolicyInput } from "../policy/evaluate-policy.js";
@@ -9,7 +7,12 @@ import type { RedactValueOptions } from "../redaction/redact.js";
 import type { JsonObject } from "../schema/json.js";
 import type { HarnessContext, HarnessSurface } from "../schema/surface.js";
 import { HarnessContextSchema, HarnessSurfaceSchema } from "../schema/surface.js";
-import type { ToolContract } from "../schema/tool-contract.js";
+import type {
+  InferToolInput,
+  InferToolOutput,
+  ToolContract,
+  TraceGateInputSchema,
+} from "../schema/tool-contract.js";
 import type { ToolCallRecord, TraceGateRun, TraceGateRunStatus } from "../schema/trace.js";
 import { TraceGateRunSchema, TraceGateRunStatusSchema } from "../schema/trace.js";
 import { appendPolicyDiagnostic, resolvePolicyVerdictAfterReview } from "./approval-resolution.js";
@@ -78,8 +81,8 @@ export type PolicyEvaluator = (
   input: EvaluatePolicyInput,
 ) => PolicyVerdict | Promise<PolicyVerdict>;
 
-export type WrappedTool<TInputSchema extends z.ZodType<unknown>, TResult> = (
-  input: z.input<TInputSchema>,
+export type WrappedTool<TInputSchema extends TraceGateInputSchema, TResult> = (
+  input: InferToolInput<TInputSchema>,
 ) => Promise<TResult>;
 
 export interface Harness {
@@ -87,10 +90,10 @@ export interface Harness {
   startRun(input?: StartRunInput): Promise<TraceGateRun>;
   finishRun(status?: TraceGateRunStatus): Promise<TraceGateRun>;
   recordEvidence(record: EvidenceRecordInput): Promise<EvidenceRecord>;
-  wrapTool<TInputSchema extends z.ZodType<unknown>, TResult>(
+  wrapTool<TInputSchema extends TraceGateInputSchema, TResult>(
     contract: ToolContract<TInputSchema>,
     execute: (
-      input: z.infer<TInputSchema>,
+      input: InferToolOutput<TInputSchema>,
       context: ToolRuntimeContext,
     ) => Promise<TResult> | TResult,
   ): WrappedTool<TInputSchema, TResult>;
@@ -190,14 +193,14 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
     return parsed;
   };
 
-  const wrapTool = <TInputSchema extends z.ZodType<unknown>, TResult>(
+  const wrapTool = <TInputSchema extends TraceGateInputSchema, TResult>(
     contract: ToolContract<TInputSchema>,
     execute: (
-      input: z.infer<TInputSchema>,
+      input: InferToolOutput<TInputSchema>,
       context: ToolRuntimeContext,
     ) => Promise<TResult> | TResult,
   ): WrappedTool<TInputSchema, TResult> => {
-    return async (input: z.input<TInputSchema>): Promise<TResult> => {
+    return async (input: InferToolInput<TInputSchema>): Promise<TResult> => {
       const run = await ensureRun();
       const parsedInput = contract.inputSchema.safeParse(input);
 
@@ -208,7 +211,7 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
           riskTier: contract.riskTier,
           status: "blocked",
           input: redactedInput,
-          error: parsedInput.error.message,
+          error: getErrorMessage(parsedInput.error),
         });
         throw new TraceGateInputValidationError("Tool input failed contract validation.", {
           runId: run.id,
@@ -282,7 +285,7 @@ export function createHarness(options: CreateHarnessOptions = {}): Harness {
 
       let result: TResult;
       try {
-        result = await execute(parsedInput.data as z.output<TInputSchema>, {
+        result = await execute(parsedInput.data as InferToolOutput<TInputSchema>, {
           run: snapshotRun(run),
           runId: run.id,
           context: getRunContext(run),

@@ -1,0 +1,23 @@
+{
+  "name": "tracegate-template-langgraph-langchain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter @tracegate/adapters build && tsc -p tsconfig.json",
+    "start": "pnpm build && node dist/index.js",
+    "fixtures:create": "pnpm --filter @tracegate/cli build && node ../../../packages/cli/dist/bin/tracegate.js fixtures create traces/runtime.jsonl --runtime-gate --out fixtures/runtime.ts --force",
+    "replay": "pnpm --filter @tracegate/cli build && node ../../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/runtime.ts --trace traces/runtime.jsonl --json",
+    "check": "pnpm start && pnpm replay"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.1.48",
+    "@tracegate/adapters": "workspace:*",
+    "@tracegate/cli": "workspace:*",
+    "@tracegate/core": "workspace:*",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1"
+  }
+}

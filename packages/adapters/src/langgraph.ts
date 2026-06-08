@@ -1,5 +1,10 @@
 import { tool } from "@langchain/core/tools";
-import type { ToolContract, ToolRuntimeContext } from "@tracegate/core";
+import type {
+  InferToolInput,
+  InferToolOutput,
+  ToolContract,
+  ToolRuntimeContext,
+} from "@tracegate/core";
 import type { z } from "zod";
 
 import { resolveDescription, resolveHarness, type TraceGateAdapterOptions } from "./common.js";
@@ -9,7 +14,7 @@ export type TraceGateLangGraphToolOptions = TraceGateAdapterOptions;
 export function createTraceGateLangGraphTool<TInputSchema extends z.ZodType<unknown>, TResult>(
   contract: ToolContract<TInputSchema>,
   execute: (
-    input: z.infer<TInputSchema>,
+    input: InferToolOutput<TInputSchema>,
     context: ToolRuntimeContext,
   ) => Promise<TResult> | TResult,
   options: TraceGateLangGraphToolOptions = {},
@@ -17,7 +22,7 @@ export function createTraceGateLangGraphTool<TInputSchema extends z.ZodType<unkn
   const harness = resolveHarness(options);
   const wrapped = harness.wrapTool(contract, execute);
 
-  return tool(async (input) => wrapped(input as z.input<TInputSchema>), {
+  return tool(async (input) => wrapped(input as InferToolInput<TInputSchema>), {
     name: contract.name,
     description: resolveDescription(options.description, contract.description, contract.name),
     schema: contract.inputSchema as never,

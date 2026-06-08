@@ -23,6 +23,7 @@ Expected output:
 - `blocked: true`
 - `validationBlocked: true`
 - `sideEffectExecutions: 0`
+- `sideEffectPrevented: true`
 - ordered TraceGate runtime events
 - `redacted: true`
 - `rawSecretFails: true`

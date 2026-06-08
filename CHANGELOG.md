@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.1
+
+- Improved `tracegate init` to generate a runnable config, runtime replay fixture, JSONL trace, and redaction check.
+- Expanded `tracegate doctor` with package version, module resolution, schema compatibility, and config import preflight diagnostics.
+- Updated quickstart docs with CI-ready starter commands and doctor severity guidance.
+
+## 0.5.0
+
+- Added plain function and Vercel AI SDK adapter exports for runtime-gate-wrapped tools.
+- Added local-first agent stack templates for plain functions, OpenAI Agents SDK, LangGraph/LangChain, and Vercel AI SDK.
+- Added `pnpm templates:check` to build, run, and replay every stack template without model/API credentials.
+- Expanded adapter docs with rollout guidance for observe, shadow, validation-only enforcement, and runtime JSONL replay.
+
+## 0.4.0
+
+- Added side-effect safety evidence fields to runtime gate summaries: `handlerSkippedReason`, `sideEffectPrevented`, and `wouldHaveExecutedInShadow`.
+- Added `summarizeSideEffectSafety()` for runtime summaries and tool trace records.
+- Improved CLI human diagnostics for blocked tool records with handler execution and side-effect prevention details.
+- Expanded examples and docs for proving side-effect handlers did not execute after validation, policy, review, or approval-denied gates.
+
+## 0.3.3
+
+- Added runtime replay `toolEventSequence` expectations with exact and ordered-subset matching.
+- Made `tracegate fixtures create --runtime-gate` generate tool-boundary, ordered-subset fixtures for production JSONL traces.
+- Improved runtime replay docs for approval-denied and runtime-block paths that should not depend on full-run event counts.
+
+## 0.3.2
+
+- Added `enforcement.toolNames` for targeted runtime-gate enforcement by tool name and risk tier while keeping `allowlist` as a trace/gate inclusion filter.
+- Added stable runtime-gate summary booleans for production logging: `toolExecuted`, `enforcementApplied`, and `validationOnly`.
+- Expanded runtime integration docs with mode mapping, targeted production enforcement, SSE/tool-result error envelopes, and guidance for integrating without replacing auth or business policy.
+
+## 0.3.1
+
+- Made TraceGate tool input schemas structurally `safeParse`-compatible instead of requiring the same `z.ZodType` surface as TraceGate's bundled Zod dependency.
+- Relaxed manifest adapter schema-map types so external Zod-compatible registries can pass schema maps without `as unknown as LooseManifestSchemaMap` casts.
+
 ## 0.3.0
 
 - Added opt-in `traceRunEvents` support for `createRuntimeGate()` so host runtimes can emit `run.started` and `run.finished` around boundary tool events.

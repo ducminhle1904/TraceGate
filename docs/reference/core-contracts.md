@@ -104,8 +104,10 @@ const adapter = createManifestContractAdapter({
 const contract = adapter.getContract("placeOrder");
 ```
 
-Use `createLooseManifestContractAdapter()` for complex registry types where the schema map is
-available as `Record<string, z.ZodTypeAny>` and the strict adapter would force consumer-side casts:
+Use `createLooseManifestContractAdapter()` for complex registry types where the schema map comes
+from another package boundary. Schema values only need to provide a `safeParse(input)` function, so
+external Zod instances or Zod-compatible wrappers do not need `as unknown as LooseManifestSchemaMap`
+casts:
 
 ```ts
 const looseAdapter = createLooseManifestContractAdapter({
@@ -244,6 +246,21 @@ assertNoSecretLikeValues(trace, {
   redactionPlaceholders: ["<hidden>"],
 });
 ```
+
+### `summarizeSideEffectSafety(summaryOrEvent)`
+
+Returns compact JSON-safe evidence that a side-effecting handler did or did not execute. It accepts
+a runtime gate summary, tool trace event, or tool call record.
+
+Useful fields: `handlerExecuted`, `handlerSkippedReason`, `sideEffectPrevented`,
+`wouldHaveExecutedInShadow`, `toolName`, `riskTier`, `finalVerdict`, and `diagnosticRules`.
+
+```ts
+const evidence = summarizeSideEffectSafety(toolBlockedEvent);
+```
+
+For blocked side-effect tools, use this in CI to prove `handlerExecuted=false` and
+`sideEffectPrevented=true`.
 
 ## Schemas And Types
 

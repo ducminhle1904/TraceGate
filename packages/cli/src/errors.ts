@@ -1,4 +1,9 @@
-import { type PolicyDiagnostic, type PolicyVerdict, TraceGateRuntimeError } from "@tracegate/core";
+import {
+  type PolicyDiagnostic,
+  type PolicyVerdict,
+  summarizeSideEffectSafety,
+  TraceGateRuntimeError,
+} from "@tracegate/core";
 
 const DETAIL_LIMIT = 5;
 
@@ -17,6 +22,19 @@ export function formatRunCaseError(error: unknown): string {
       }
       if (verdict.diagnostics && verdict.diagnostics.length > 0) {
         parts.push(`diagnostics=${formatPolicyDiagnostics(verdict.diagnostics)}`);
+      }
+      if (verdict.status === "block" || verdict.status === "review") {
+        const sideEffectSafety = summarizeSideEffectSafety({
+          toolName: verdict.toolName,
+          status: "blocked",
+          riskTier: verdict.riskTier,
+          policyVerdict: verdict,
+        });
+        parts.push(`handlerExecuted=${sideEffectSafety.handlerExecuted}`);
+        if (sideEffectSafety.handlerSkippedReason) {
+          parts.push(`handlerSkippedReason=${sideEffectSafety.handlerSkippedReason}`);
+        }
+        parts.push(`sideEffectPrevented=${sideEffectSafety.sideEffectPrevented}`);
       }
     }
     if (error.cause !== undefined) {

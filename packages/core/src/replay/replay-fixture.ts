@@ -3,7 +3,12 @@ import { z } from "zod";
 
 import { EvidenceTypeSchema } from "../evidence/evidence.js";
 import { PolicyVerdictStatusSchema } from "../policy/verdict.js";
-import { type RunTraceEvent, type TraceEvent, TraceEventSchema } from "../runtime/trace-sink.js";
+import {
+  type RunTraceEvent,
+  type ToolTraceEvent,
+  type TraceEvent,
+  TraceEventSchema,
+} from "../runtime/trace-sink.js";
 import type { JsonValue } from "../schema/json.js";
 import { JsonObjectSchema, JsonValueSchema } from "../schema/json.js";
 import { MatrixCaseSchema } from "../schema/matrix-case.js";
@@ -31,11 +36,28 @@ export const ReplayTraceEventCountModeSchema = z.enum(["exact", "tool-boundary"]
 
 export type ReplayTraceEventCountMode = z.infer<typeof ReplayTraceEventCountModeSchema>;
 
+export const ReplayToolEventSequenceModeSchema = z.enum(["exact", "ordered-subset"]);
+
+export type ReplayToolEventSequenceMode = z.infer<typeof ReplayToolEventSequenceModeSchema>;
+
+export const ReplayToolEventExpectationSchema = z
+  .object({
+    type: z.enum(["tool.started", "tool.succeeded", "tool.failed", "tool.blocked"]),
+    toolName: ToolNameSchema,
+    status: ToolCallStatusSchema,
+    policyVerdict: PolicyVerdictStatusSchema.optional(),
+  })
+  .strict();
+
+export type ReplayToolEventExpectation = z.infer<typeof ReplayToolEventExpectationSchema>;
+
 export const ReplayExpectationSchema = z
   .object({
     toolSequence: z.array(ToolNameSchema).default([]),
     toolStatuses: z.record(ToolNameSchema, z.array(ToolCallStatusSchema)).default({}),
     policyVerdicts: z.record(ToolNameSchema, z.array(PolicyVerdictStatusSchema)).default({}),
+    toolEventSequence: z.array(ReplayToolEventExpectationSchema).optional(),
+    toolEventSequenceMode: ReplayToolEventSequenceModeSchema.default("exact"),
     evidence: z.array(ReplayEvidenceExpectationSchema).default([]),
     runStatus: TraceGateRunStatusSchema.optional(),
     outputKeys: z.array(z.string().min(1)).default([]),
@@ -72,7 +94,10 @@ export const ReplayFixtureSchema = z
   })
   .strict()
   .superRefine((fixture, context) => {
-    if (fixture.captured.traceEventCount !== fixture.expect.traceEventCount) {
+    if (
+      fixture.expect.traceEventCountMode === "exact" &&
+      fixture.captured.traceEventCount !== fixture.expect.traceEventCount
+    ) {
       context.addIssue({
         code: "custom",
         path: ["expect", "traceEventCount"],
@@ -102,6 +127,8 @@ export interface CreateReplayExpectationOptions {
   absentOutputKeys?: string[];
   outputValues?: Record<string, JsonValue>;
   traceEventCountMode?: ReplayTraceEventCountMode;
+  toolEventSequenceMode?: ReplayToolEventSequenceMode;
+  includeRunStatus?: boolean;
 }
 
 export type TraceJsonlChunk = string | Uint8Array;
@@ -171,6 +198,7 @@ export function createReplayExpectation(
   source: ReplaySource,
   options: CreateReplayExpectationOptions = {},
 ): ReplayExpectation {
+  const { includeRunStatus = true, ...expectationOptions } = options;
   const run = getSourceRun(source);
   const events = source.events ?? [];
   const toolEvents = events.filter(isToolEvent);
@@ -189,10 +217,14 @@ export function createReplayExpectation(
     toolSequence,
     toolStatuses: groupByToolName(toolRecords, (record) => record.status),
     policyVerdicts: groupByToolName(toolRecords, (record) => record.policyVerdict?.status),
+    toolEventSequence:
+      toolEvents.length > 0
+        ? toolEvents.map(toToolEventExpectation)
+        : toolRecords.map(toToolRecordEventExpectation),
     evidence: evidence.map((record) => ({ id: record.id, type: record.type })),
-    ...(run?.status ? { runStatus: run.status } : {}),
+    ...(includeRunStatus && run?.status ? { runStatus: run.status } : {}),
     outputKeys: collectOutputKeys(source.output),
-    ...options,
+    ...expectationOptions,
     traceEventCount:
       options.traceEventCountMode === "tool-boundary" ? toolEvents.length : events.length,
   });
@@ -207,9 +239,17 @@ export function compareReplayExpectation(
   });
   const failures: string[] = [];
 
-  compareArray("tool sequence", expected.toolSequence, actual.toolSequence, failures);
-  compareRecordArrays("tool statuses", expected.toolStatuses, actual.toolStatuses, failures);
-  compareRecordArrays("policy verdicts", expected.policyVerdicts, actual.policyVerdicts, failures);
+  if (expected.toolEventSequenceMode !== "ordered-subset") {
+    compareArray("tool sequence", expected.toolSequence, actual.toolSequence, failures);
+    compareRecordArrays("tool statuses", expected.toolStatuses, actual.toolStatuses, failures);
+    compareRecordArrays(
+      "policy verdicts",
+      expected.policyVerdicts,
+      actual.policyVerdicts,
+      failures,
+    );
+  }
+  compareToolEventSequence(expected, actual.toolEventSequence ?? [], failures);
   compareEvidence(expected.evidence, actual.evidence, failures);
   compareOutputKeys(expected, actual.outputKeys, failures);
   compareOutputAssertions(expected, source.output, failures);
@@ -230,7 +270,15 @@ export function compareReplayExpectation(
         ? "tool-boundary trace events"
         : "trace events";
 
-    if (actualTraceEventCount !== expected.traceEventCount) {
+    const orderedSubsetBoundary =
+      expected.traceEventCountMode === "tool-boundary" &&
+      expected.toolEventSequenceMode === "ordered-subset";
+
+    if (orderedSubsetBoundary && actualTraceEventCount < expected.traceEventCount) {
+      failures.push(
+        `Expected at least ${expected.traceEventCount} ${modeDescription} from fixture, got ${actualTraceEventCount} current ${modeDescription}. Trace event count mode: ${expected.traceEventCountMode}.`,
+      );
+    } else if (!orderedSubsetBoundary && actualTraceEventCount !== expected.traceEventCount) {
       failures.push(
         `Expected ${expected.traceEventCount} ${modeDescription} from fixture, got ${actualTraceEventCount} current ${modeDescription}. Trace event count mode: ${expected.traceEventCountMode}.`,
       );
@@ -266,6 +314,39 @@ function groupByToolName<T>(
   }
 
   return grouped;
+}
+
+function toToolEventExpectation(event: ToolTraceEvent): ReplayToolEventExpectation {
+  return ReplayToolEventExpectationSchema.parse({
+    type: event.type,
+    toolName: event.record.toolName,
+    status: event.record.status,
+    ...(event.record.policyVerdict?.status
+      ? { policyVerdict: event.record.policyVerdict.status }
+      : {}),
+  });
+}
+
+function toToolRecordEventExpectation(record: ToolCallRecord): ReplayToolEventExpectation {
+  return ReplayToolEventExpectationSchema.parse({
+    type: toolEventTypeForStatus(record.status),
+    toolName: record.toolName,
+    status: record.status,
+    ...(record.policyVerdict?.status ? { policyVerdict: record.policyVerdict.status } : {}),
+  });
+}
+
+function toolEventTypeForStatus(status: ToolCallRecord["status"]): ToolTraceEvent["type"] {
+  switch (status) {
+    case "started":
+      return "tool.started";
+    case "succeeded":
+      return "tool.succeeded";
+    case "failed":
+      return "tool.failed";
+    case "blocked":
+      return "tool.blocked";
+  }
 }
 
 function collectOutputKeys(output: unknown): string[] {
@@ -322,6 +403,82 @@ function compareRecordArrays(
   for (const key of keys) {
     compareArray(`${label} for "${key}"`, expected[key] ?? [], actual[key] ?? [], failures);
   }
+}
+
+function compareToolEventSequence(
+  expected: ReplayExpectation,
+  actual: ReplayToolEventExpectation[],
+  failures: string[],
+): void {
+  if (expected.toolEventSequence === undefined) {
+    return;
+  }
+
+  if (expected.toolEventSequenceMode === "ordered-subset") {
+    compareToolEventOrderedSubset(expected.toolEventSequence, actual, failures);
+    return;
+  }
+
+  if (
+    expected.toolEventSequence.length !== actual.length ||
+    expected.toolEventSequence.some(
+      (event, index) => !toolEventExpectationMatches(event, actual[index]),
+    )
+  ) {
+    failures.push(
+      `Expected exact tool event sequence ${formatToolEventSequence(expected.toolEventSequence)}, got ${formatToolEventSequence(actual)}. Trace event count mode: ${expected.traceEventCountMode}.`,
+    );
+  }
+}
+
+function compareToolEventOrderedSubset(
+  expected: ReplayToolEventExpectation[],
+  actual: ReplayToolEventExpectation[],
+  failures: string[],
+): void {
+  let cursor = 0;
+
+  for (const expectedEvent of expected) {
+    let matchIndex = -1;
+    for (let index = cursor; index < actual.length; index += 1) {
+      if (toolEventExpectationMatches(expectedEvent, actual[index])) {
+        matchIndex = index;
+        break;
+      }
+    }
+    if (matchIndex === -1) {
+      failures.push(
+        `Expected tool event ${formatToolEvent(expectedEvent)} after position ${cursor}, but it was not found in current tool events ${formatToolEventSequence(actual)}. Tool event sequence mode: ordered-subset. Trace event count mode: tool-boundary.`,
+      );
+      return;
+    }
+    cursor = matchIndex + 1;
+  }
+}
+
+function toolEventExpectationMatches(
+  expected: ReplayToolEventExpectation,
+  actual: ReplayToolEventExpectation | undefined,
+): boolean {
+  return (
+    actual !== undefined &&
+    expected.type === actual.type &&
+    expected.toolName === actual.toolName &&
+    expected.status === actual.status &&
+    expected.policyVerdict === actual.policyVerdict
+  );
+}
+
+function formatToolEventSequence(events: ReplayToolEventExpectation[]): string {
+  if (events.length === 0) {
+    return "[]";
+  }
+  return `[${events.map(formatToolEvent).join(", ")}]`;
+}
+
+function formatToolEvent(event: ReplayToolEventExpectation): string {
+  const verdict = event.policyVerdict ? ` verdict=${event.policyVerdict}` : "";
+  return `${event.type}:${event.toolName}:${event.status}${verdict}`;
 }
 
 function compareEvidence(

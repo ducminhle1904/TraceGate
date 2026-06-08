@@ -1,5 +1,10 @@
 import { tool } from "@openai/agents";
-import type { ToolContract, ToolRuntimeContext } from "@tracegate/core";
+import type {
+  InferToolInput,
+  InferToolOutput,
+  ToolContract,
+  ToolRuntimeContext,
+} from "@tracegate/core";
 import type { z } from "zod";
 
 import { resolveDescription, resolveHarness, type TraceGateAdapterOptions } from "./common.js";
@@ -9,7 +14,7 @@ export type TraceGateOpenAIAgentsToolOptions = TraceGateAdapterOptions;
 export function createTraceGateOpenAIAgentsTool<TInputSchema extends z.ZodType<unknown>, TResult>(
   contract: ToolContract<TInputSchema>,
   execute: (
-    input: z.infer<TInputSchema>,
+    input: InferToolOutput<TInputSchema>,
     context: ToolRuntimeContext,
   ) => Promise<TResult> | TResult,
   options: TraceGateOpenAIAgentsToolOptions = {},
@@ -24,7 +29,7 @@ export function createTraceGateOpenAIAgentsTool<TInputSchema extends z.ZodType<u
     strict: true,
     errorFunction: null,
     async execute(input) {
-      return wrapped(input as z.input<TInputSchema>);
+      return wrapped(input as InferToolInput<TInputSchema>);
     },
   }) as ReturnType<typeof tool>;
 }

@@ -12,6 +12,7 @@ import {
   type ReplayFixture,
   ReplayFixtureSchema,
   summarizeReplaySource,
+  summarizeSideEffectSafety,
   type TraceEvent,
 } from "@tracegate/core";
 
@@ -61,7 +62,13 @@ export async function runFixturesCommand(args: string[], io: CommandIo): Promise
   const runtimeGate = values["runtime-gate"] === true;
   const expectation = createReplayExpectation(
     { events },
-    runtimeGate && !hasRunFinishedEvent(events) ? { traceEventCountMode: "tool-boundary" } : {},
+    runtimeGate
+      ? {
+          traceEventCountMode: "tool-boundary",
+          toolEventSequenceMode: "ordered-subset",
+          includeRunStatus: false,
+        }
+      : {},
   );
   const matrixCase = caseId
     ? await loadCaseFromConfig(io.cwd, configPath, caseId)
@@ -74,10 +81,7 @@ export async function runFixturesCommand(args: string[], io: CommandIo): Promise
     version: "1",
     id: matrixCase.id,
     case: matrixCase,
-    captured: {
-      ...summarizeReplaySource({ events }),
-      traceEventCount: expectation.traceEventCount,
-    },
+    captured: summarizeReplaySource({ events }),
     expect: expectation,
     metadata: {
       source: tracePath,
@@ -250,6 +254,7 @@ export async function runReplayRuntimeCommand(args: string[], io: CommandIo): Pr
         "Runtime-gate boundary trace has no run.finished event; run lifecycle comparison was intentionally skipped unless the fixture expects runStatus.",
       );
     }
+    failures.push(...formatSideEffectSafetyDetails(events));
   }
 
   const runId = summarizeReplaySource({ events }).runId;
@@ -409,4 +414,28 @@ function now(io: CommandIo): Date {
 
 function hasRunFinishedEvent(events: TraceEvent[]): boolean {
   return events.some((event) => event.type === "run.finished");
+}
+
+function formatSideEffectSafetyDetails(events: TraceEvent[]): string[] {
+  return events
+    .filter((event) => event.type.startsWith("tool."))
+    .map((event) => summarizeSideEffectSafety(event))
+    .filter((summary) => summary.toolName && summary.sideEffectPrevented)
+    .map((summary) =>
+      [
+        `Side-effect safety: tool=${summary.toolName}`,
+        summary.riskTier ? `riskTier=${summary.riskTier}` : undefined,
+        `handlerExecuted=${summary.handlerExecuted}`,
+        summary.handlerSkippedReason
+          ? `handlerSkippedReason=${summary.handlerSkippedReason}`
+          : undefined,
+        `sideEffectPrevented=${summary.sideEffectPrevented}`,
+        summary.finalVerdict ? `finalVerdict=${summary.finalVerdict}` : undefined,
+        summary.diagnosticRules.length > 0
+          ? `diagnostics=${summary.diagnosticRules.join(",")}`
+          : undefined,
+      ]
+        .filter((part): part is string => part !== undefined)
+        .join(" "),
+    );
 }

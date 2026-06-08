@@ -5,6 +5,7 @@ import {
   assertNoSecretLikeValues,
   compareReplayExpectation,
   createEvidenceRecord,
+  createHarness,
   createLooseManifestContractAdapter,
   createPolicyEvaluator,
   createReplayExpectation,
@@ -32,6 +33,15 @@ const EmailInputSchema = z.object({
   subject: z.string().min(1),
   body: z.string().min(1),
 });
+
+const structuralOrderSchema = {
+  safeParse(input: { orderId: string; quantity: number }) {
+    if (input.orderId.length > 0 && input.quantity > 0) {
+      return { success: true as const, data: input };
+    }
+    return { success: false as const, error: new Error("Invalid order input.") };
+  },
+};
 
 describe("defineToolContract", () => {
   it("parses a valid tool contract and preserves the Zod input schema", () => {
@@ -74,9 +84,30 @@ describe("defineToolContract", () => {
       defineToolContract({
         name: "fakeTool",
         riskTier: "low",
-        inputSchema: { safeParse: () => ({ success: true }) } as never,
+        inputSchema: { parse: () => ({ ok: true }) } as never,
       }),
     ).toThrow();
+  });
+
+  it("accepts safeParse-compatible input schemas without requiring TraceGate's Zod instance", async () => {
+    const contract = defineToolContract({
+      name: "structuralLookup",
+      riskTier: "read",
+      inputSchema: structuralOrderSchema,
+    });
+    const harness = createHarness();
+    const lookup = harness.wrapTool(contract, async (input) => ({
+      orderId: input.orderId,
+      quantity: input.quantity,
+    }));
+
+    await expect(lookup({ orderId: "order-1", quantity: 2 })).resolves.toEqual({
+      orderId: "order-1",
+      quantity: 2,
+    });
+    await expect(lookup({ orderId: "", quantity: 2 })).rejects.toThrow(
+      "Tool input failed contract validation.",
+    );
   });
 });
 
@@ -267,6 +298,23 @@ describe("tool contract manifest adapters", () => {
         getRiskTier: (tool) => tool.risk,
       }),
     ).toThrow('Missing input schema for tool manifest "missingSchema".');
+  });
+
+  it("accepts loose manifest schema maps typed to external safeParse-compatible schemas", () => {
+    const schemas: Record<string, typeof structuralOrderSchema> = {
+      structuralLookup: structuralOrderSchema,
+    };
+    const adapter = createLooseManifestContractAdapter({
+      registry: [{ name: "structuralLookup", risk: "read" }],
+      schemas,
+      getName: (tool) => tool.name,
+      getRiskTier: (tool) => tool.risk,
+    });
+
+    const contract = adapter.getContract("structuralLookup");
+
+    expect(contract.inputSchema.safeParse({ orderId: "order-1", quantity: 1 }).success).toBe(true);
+    expect(contract.inputSchema.safeParse({ orderId: "", quantity: 1 }).success).toBe(false);
   });
 });
 
@@ -1030,10 +1078,182 @@ describe("replay fixtures", () => {
     expect(expected).toMatchObject({
       toolSequence: ["sendEmail"],
       toolStatuses: { sendEmail: ["started", "succeeded"] },
+      toolEventSequence: [
+        {
+          type: "tool.started",
+          toolName: "sendEmail",
+          status: "started",
+          policyVerdict: "review",
+        },
+        {
+          type: "tool.succeeded",
+          toolName: "sendEmail",
+          status: "succeeded",
+          policyVerdict: "review",
+        },
+      ],
       traceEventCount: 2,
       traceEventCountMode: "tool-boundary",
     });
     expect(compareReplayExpectation(expected, { events }).failures).toEqual([]);
+  });
+
+  it("ignores runtime-gate run lifecycle events in tool-boundary count mode", () => {
+    const runStarted = {
+      sequence: 1,
+      type: "run.started",
+      timestamp,
+      runId: "run-1",
+      run: {
+        id: "run-1",
+        startedAt: timestamp,
+        status: "running",
+        toolCalls: [],
+        evidence: [],
+      },
+    };
+    const runFinished = {
+      sequence: 3,
+      type: "run.finished",
+      timestamp,
+      runId: "run-1",
+      run: {
+        id: "run-1",
+        startedAt: timestamp,
+        finishedAt: timestamp,
+        status: "succeeded",
+        toolCalls: [toolEvent.record],
+        evidence: [],
+      },
+    };
+    const eventsWithRunLifecycle = parseTraceJsonl(
+      `${JSON.stringify(runStarted)}\n${JSON.stringify(toolEvent)}\n${JSON.stringify(runFinished)}\n`,
+    );
+    const boundaryEvents = parseTraceJsonl(`${JSON.stringify(toolEvent)}\n`);
+    const expected = createReplayExpectation(
+      { events: boundaryEvents },
+      { traceEventCountMode: "tool-boundary" },
+    );
+
+    expect(compareReplayExpectation(expected, { events: eventsWithRunLifecycle }).failures).toEqual(
+      [],
+    );
+  });
+
+  it("can omit lifecycle run status from runtime-boundary expectations", () => {
+    const runFinished = {
+      sequence: 2,
+      type: "run.finished",
+      timestamp,
+      runId: "run-1",
+      run: {
+        id: "run-1",
+        startedAt: timestamp,
+        finishedAt: timestamp,
+        status: "blocked",
+        toolCalls: [toolEvent.record],
+        evidence: [],
+      },
+    };
+    const events = parseTraceJsonl(
+      `${JSON.stringify(toolEvent)}\n${JSON.stringify(runFinished)}\n`,
+    );
+
+    expect(
+      createReplayExpectation(
+        { events },
+        {
+          includeRunStatus: false,
+          traceEventCountMode: "tool-boundary",
+        },
+      ),
+    ).not.toHaveProperty("runStatus");
+  });
+
+  it("supports ordered-subset runtime-gate tool event sequences", () => {
+    const blocked = {
+      ...toolEvent,
+      type: "tool.blocked",
+      record: {
+        ...toolEvent.record,
+        status: "blocked",
+        policyVerdict: {
+          status: "block",
+          reasons: ["approval denied"],
+          riskTier: "high",
+          toolName: "sendEmail",
+        },
+      },
+    };
+    const extraStarted = {
+      ...toolEvent,
+      sequence: 2,
+      record: {
+        ...toolEvent.record,
+        id: "tool-extra",
+        toolName: "lookupOrder",
+      },
+    };
+    const expected = createReplayExpectation(
+      { events: parseTraceJsonl(`${JSON.stringify(blocked)}\n`) },
+      {
+        traceEventCountMode: "tool-boundary",
+        toolEventSequenceMode: "ordered-subset",
+      },
+    );
+    const actual = parseTraceJsonl(`${JSON.stringify(extraStarted)}\n${JSON.stringify(blocked)}\n`);
+
+    expect(compareReplayExpectation(expected, { events: actual }).failures).toEqual([]);
+  });
+
+  it("reports ordered-subset runtime-gate tool event drift clearly", () => {
+    const blocked = {
+      ...toolEvent,
+      type: "tool.blocked",
+      record: {
+        ...toolEvent.record,
+        status: "blocked",
+        policyVerdict: {
+          status: "block",
+          reasons: ["approval denied"],
+          riskTier: "high",
+          toolName: "sendEmail",
+        },
+      },
+    };
+    const allowed = {
+      ...toolEvent,
+      type: "tool.succeeded",
+      record: {
+        ...toolEvent.record,
+        status: "succeeded",
+        policyVerdict: {
+          status: "allow",
+          reasons: ["approved"],
+          riskTier: "high",
+          toolName: "sendEmail",
+        },
+      },
+    };
+    const expected = createReplayExpectation(
+      { events: parseTraceJsonl(`${JSON.stringify(blocked)}\n`) },
+      {
+        traceEventCountMode: "tool-boundary",
+        toolEventSequenceMode: "ordered-subset",
+      },
+    );
+
+    expect(
+      compareReplayExpectation(expected, {
+        events: parseTraceJsonl(`${JSON.stringify(allowed)}\n`),
+      }).failures,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "Expected tool event tool.blocked:sendEmail:blocked verdict=block after position 0",
+        ),
+      ]),
+    );
   });
 
   it("reports runtime-gate boundary replay drift clearly", () => {
@@ -1097,6 +1317,27 @@ describe("replay fixtures", () => {
         },
       }),
     ).toThrow("trace event counts");
+  });
+
+  it("allows runtime-gate tool-boundary fixtures to capture full trace counts", () => {
+    expect(() =>
+      defineReplayFixture({
+        version: "1",
+        id: "runtime-count",
+        case: {
+          id: "runtime-count",
+          prompt: "Runtime count",
+          expect: {},
+        },
+        captured: {
+          traceEventCount: 3,
+        },
+        expect: {
+          traceEventCount: 1,
+          traceEventCountMode: "tool-boundary",
+        },
+      }),
+    ).not.toThrow();
   });
 
   it("collects output keys without recursing through cycles", () => {

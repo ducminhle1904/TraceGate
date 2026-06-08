@@ -43,6 +43,22 @@ This distinction matters in CI: "policy requires review" is the initial policy d
 "approval was denied" is the approval-handler result, and "tool was blocked" is the final
 runtime outcome. A denied approval is expected to end as `block`, not `review`.
 
+## Side-Effect Safety Evidence
+
+`RuntimeGateSummary` includes side-effect safety fields for production logging and CI probes:
+
+- `handlerExecuted`: whether the host handler ran.
+- `handlerSkippedReason`: why TraceGate skipped the handler, such as `validation-failed`,
+  `policy-blocked`, `review-required`, or `approval-denied`.
+- `sideEffectPrevented`: true when TraceGate enforcement blocked before the handler could perform a
+  side effect.
+- `wouldHaveExecutedInShadow`: in `shadow` mode, whether TraceGate would have allowed execution if
+  enforcement had been enabled.
+
+Use `summarizeSideEffectSafety(summaryOrEvent)` to derive the same compact evidence from a runtime
+summary, tool trace event, or tool call record. This is reporting evidence only; app authorization,
+IAM, and business policy stay app-owned.
+
 ## Error Behavior
 
 - Invalid input throws `TraceGateInputValidationError`; the real tool is not called.
@@ -93,7 +109,26 @@ tool to `createHarness()` at once.
 - `off`: call the host handler directly.
 - `observe`: validate, evaluate policy, trace, and summarize without blocking execution.
 - `shadow`: observe plus compare a host runtime verdict with TraceGate's verdict.
-- `enforce`: block invalid input and blocking/review verdicts for configured risk tiers.
+- `enforce`: block invalid input and blocking/review verdicts for tools in the configured
+  enforcement scope.
+
+`enforcement` can target by tool name, risk tier, or both:
+
+```ts
+const gate = createRuntimeGate({
+  mode: "enforce",
+  enforcement: {
+    toolNames: ["lookupOrder", "issueRefund"],
+    riskTiers: ["read", "high"],
+    validationOnly: false,
+  },
+});
+```
+
+All configured scopes must match before enforcement blocks a call. `validationOnly: true` means
+TraceGate blocks invalid input for matching tools, but does not block policy `review` or `block`
+verdicts. `allowlist` is different: it is a trace/gate inclusion filter. Tools outside the
+allowlist bypass TraceGate validation, policy evaluation, tracing, and summaries.
 
 `errorAdapter` can translate TraceGate runtime errors into framework-specific tool-result
 payloads. This is useful for agent frameworks that expect a tool response instead of an exception.

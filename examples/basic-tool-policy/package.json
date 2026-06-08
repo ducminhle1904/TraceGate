@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test:matrix": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js test --json",
-    "test:replay": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js replay fixtures/blocked-email.ts --json"
+    "test:replay": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js replay fixtures/blocked-email.ts --json",
+    "test:runtime-replay": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/runtime-approval-denied.ts --trace traces/runtime-approval-denied.jsonl --json && node ../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/runtime-approval-denied.ts --trace traces/runtime-approval-denied-run-events.jsonl --json"
   },
   "dependencies": {
     "@tracegate/core": "workspace:*",

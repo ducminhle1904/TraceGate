@@ -14,16 +14,22 @@ pnpm add @tracegate/adapters
 ## Framework Adapters
 
 ```ts
+import { createTraceGateFunctionRegistry } from "@tracegate/adapters/plain-functions";
 import { createTraceGateOpenAIAgentsTool } from "@tracegate/adapters/openai-agents";
 import { createTraceGateLangGraphTool } from "@tracegate/adapters/langgraph";
+import { createTraceGateVercelAITool } from "@tracegate/adapters/vercel-ai-sdk";
 ```
 
+- Plain functions: wraps an existing in-process tool registry with `createRuntimeGate()`.
 - OpenAI Agents SDK: creates a real function tool with the contract name, description, and
   Zod input schema.
 - LangGraph JS: creates a LangChain/LangGraph-compatible structured tool for ToolNode-style
   workflows.
+- Vercel AI SDK: creates an AI SDK `tool()` with TraceGate validation, summaries, and JSONL
+  traces at the tool boundary.
 
-Both adapters accept either an existing `harness` or `harnessOptions`.
+OpenAI and LangGraph adapters keep harness semantics. Plain function and Vercel adapters use
+runtime-gate semantics for `observe`, `shadow`, and targeted `enforce` rollout.
 
 Run local examples:
 
@@ -31,6 +37,15 @@ Run local examples:
 pnpm --filter tracegate-example-openai-agents start
 pnpm --filter tracegate-example-langgraph-js start
 ```
+
+Run local stack templates:
+
+```bash
+pnpm templates:check
+```
+
+Templates cover existing registries, observe mode, shadow comparison, validation-only
+enforcement, JSONL traces, and runtime replay without model/API credentials.
 
 ## Observability Exports
 

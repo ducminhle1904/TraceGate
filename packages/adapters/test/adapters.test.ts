@@ -6,7 +6,9 @@ import {
 import {
   createHarness,
   createMemoryTraceSink,
+  createRuntimeGate,
   defineToolContract,
+  type RuntimeGateSummary,
   TraceGateReviewRequiredError,
 } from "@tracegate/core";
 import { describe, expect, it } from "vitest";
@@ -20,10 +22,194 @@ import {
   createOpenTelemetryTraceSink,
   mapTraceEventToOpenTelemetryAttributes,
 } from "../src/opentelemetry.js";
+import { createTraceGateFunctionRegistry } from "../src/plain-functions.js";
+import { createTraceGateVercelAITool } from "../src/vercel-ai-sdk.js";
 
 const inputSchema = z.object({ value: z.string() });
 
 describe("framework adapters", () => {
+  it("wraps a plain function registry with runtime-gate validation", async () => {
+    let executed = false;
+    const summaries: RuntimeGateSummary[] = [];
+    const tools = createTraceGateFunctionRegistry(
+      {
+        lookup: {
+          description: "Look up a value.",
+          inputSchema,
+          riskTier: "read",
+          execute: async (input: { value: string }) => {
+            executed = true;
+            return { ok: input.value };
+          },
+        },
+      },
+      {},
+      {
+        runtimeGateOptions: {
+          mode: "enforce",
+          enforcement: { validationOnly: true, toolNames: ["lookup"] },
+        },
+        onSummary(summary) {
+          summaries.push(summary);
+        },
+      },
+    );
+
+    await expect(tools.lookup.execute({ value: "" })).resolves.toEqual({ ok: "" });
+    await expect(tools.lookup.execute({} as never)).rejects.toThrow(
+      "Tool input failed contract validation",
+    );
+
+    expect(executed).toBe(true);
+    expect(summaries.at(-1)).toMatchObject({
+      toolName: "lookup",
+      handlerExecuted: false,
+      handlerSkippedReason: "validation-failed",
+      sideEffectPrevented: true,
+    });
+  });
+
+  it("shares one runtime gate across a plain function registry", async () => {
+    const traceSink = createMemoryTraceSink();
+    const tools = createTraceGateFunctionRegistry(
+      {
+        first: {
+          inputSchema,
+          riskTier: "read",
+          execute: async (input: { value: string }) => ({ first: input.value }),
+        },
+        second: {
+          inputSchema,
+          riskTier: "read",
+          execute: async (input: { value: string }) => ({ second: input.value }),
+        },
+      },
+      {},
+      {
+        runtimeGateOptions: { mode: "observe" },
+        traceSink,
+      },
+    );
+
+    await tools.first.execute({ value: "a" });
+    await tools.second.execute({ value: "b" });
+
+    expect(traceSink.events.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
+    expect(new Set(traceSink.events.map((event) => event.runId)).size).toBe(1);
+  });
+
+  it("rejects conflicting runtime-gate sink callbacks in adapter options", () => {
+    expect(() =>
+      createTraceGateFunctionRegistry(
+        {
+          lookup: {
+            inputSchema,
+            riskTier: "read",
+            execute: async (input: { value: string }) => ({ ok: input.value }),
+          },
+        },
+        {},
+        {
+          runtimeGateOptions: {
+            mode: "observe",
+            traceSink: createMemoryTraceSink(),
+          },
+          traceSink: createMemoryTraceSink(),
+        },
+      ),
+    ).toThrow("traceSink cannot be provided both");
+  });
+
+  it("creates a Vercel AI SDK tool from a TraceGate contract", async () => {
+    const summaries: RuntimeGateSummary[] = [];
+    const traceSink = createMemoryTraceSink();
+    const contract = defineToolContract({
+      name: "vercel_lookup",
+      description: "Look up a value.",
+      riskTier: "read",
+      inputSchema,
+    });
+    const vercelTool = createTraceGateVercelAITool(
+      contract,
+      async (input) => ({ ok: input.value }),
+      {
+        runtimeGateOptions: { mode: "observe" },
+        traceSink,
+        onSummary(summary) {
+          summaries.push(summary);
+        },
+      },
+    );
+
+    await expect(
+      vercelTool.execute?.({ value: "delta" }, { toolCallId: "call_1", messages: [] }),
+    ).resolves.toEqual({
+      ok: "delta",
+    });
+
+    expect(vercelTool.description).toBe("Look up a value.");
+    expect(traceSink.events.map((event) => event.type)).toEqual(["tool.started", "tool.succeeded"]);
+    expect(summaries[0]).toMatchObject({
+      mode: "observe",
+      toolName: "vercel_lookup",
+      handlerExecuted: true,
+      sideEffectPrevented: false,
+    });
+  });
+
+  it("records shadow comparisons and validation-only enforcement through runtime adapters", async () => {
+    const summaries: RuntimeGateSummary[] = [];
+    const gate = createRuntimeGate({
+      mode: "shadow",
+      policyEvaluator: ({ contract }) => ({
+        status: "block",
+        reasons: ["TraceGate would block this side effect."],
+        riskTier: contract.riskTier,
+        toolName: contract.name,
+      }),
+      runtimeVerdictEvaluator: ({ contract }) => ({
+        status: "allow",
+        reasons: ["Host runtime would allow."],
+        riskTier: contract.riskTier,
+        toolName: contract.name,
+      }),
+      onSummary(summary) {
+        summaries.push(summary);
+      },
+    });
+    const contract = defineToolContract({
+      name: "shadow_side_effect",
+      riskTier: "high",
+      inputSchema,
+    });
+    const tool = createTraceGateFunctionRegistry(
+      {
+        sideEffect: {
+          inputSchema,
+          riskTier: "high",
+          execute: async (input: { value: string }) => ({ ok: input.value }),
+        },
+      },
+      {
+        getName: () => contract.name,
+      },
+      { runtimeGate: gate },
+    );
+
+    await expect(tool.sideEffect.execute({ value: "shadow" })).resolves.toEqual({
+      ok: "shadow",
+    });
+
+    expect(summaries[0]?.shadowComparison?.classifications).toContain(
+      "runtime_allow_tracegate_block",
+    );
+    expect(summaries[0]).toMatchObject({
+      handlerExecuted: true,
+      sideEffectPrevented: false,
+      wouldHaveExecutedInShadow: false,
+    });
+  });
+
   it("creates an OpenAI Agents function tool from a TraceGate contract", async () => {
     const sink = createMemoryTraceSink();
     const harness = createHarness({ traceSink: sink });

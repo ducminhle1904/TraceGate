@@ -1,7 +1,11 @@
 import {
   type CreateHarnessOptions,
   createHarness,
+  createRuntimeGate,
   type Harness,
+  type RuntimeGate,
+  type RuntimeGateOptions,
+  type RuntimeGateSummary,
   type TraceEvent,
   type TraceSink,
 } from "@tracegate/core";
@@ -11,6 +15,14 @@ export interface TraceGateAdapterOptions {
   harnessOptions?: CreateHarnessOptions;
   description?: string;
   onTraceEvent?: (event: TraceEvent) => Promise<void> | void;
+}
+
+export interface TraceGateRuntimeAdapterOptions {
+  runtimeGate?: RuntimeGate;
+  runtimeGateOptions?: Partial<RuntimeGateOptions> & Pick<RuntimeGateOptions, "mode">;
+  description?: string;
+  traceSink?: TraceSink;
+  onSummary?: (summary: RuntimeGateSummary) => Promise<void> | void;
 }
 
 export function resolveHarness(options: TraceGateAdapterOptions = {}): Harness {
@@ -39,6 +51,42 @@ export function resolveDescription(
   toolName: string,
 ): string {
   return description ?? fallback ?? `TraceGate guarded tool: ${toolName}`;
+}
+
+export function resolveRuntimeGate(options: TraceGateRuntimeAdapterOptions = {}): RuntimeGate {
+  if (options.runtimeGate) {
+    if (options.traceSink || options.onSummary || options.runtimeGateOptions) {
+      throw new Error(
+        "traceSink, onSummary, and runtimeGateOptions can only be used when the adapter creates the runtime gate.",
+      );
+    }
+    return options.runtimeGate;
+  }
+  if (options.traceSink && options.runtimeGateOptions?.traceSink) {
+    throw new Error(
+      "traceSink cannot be provided both at the adapter top level and inside runtimeGateOptions.",
+    );
+  }
+  if (options.onSummary && options.runtimeGateOptions?.onSummary) {
+    throw new Error(
+      "onSummary cannot be provided both at the adapter top level and inside runtimeGateOptions.",
+    );
+  }
+
+  const runtimeGateOptions: RuntimeGateOptions = {
+    mode: options.runtimeGateOptions?.mode ?? "observe",
+    ...options.runtimeGateOptions,
+  };
+  const traceSink = options.traceSink ?? options.runtimeGateOptions?.traceSink;
+  if (traceSink) {
+    runtimeGateOptions.traceSink = traceSink;
+  }
+  const onSummary = options.onSummary ?? options.runtimeGateOptions?.onSummary;
+  if (onSummary) {
+    runtimeGateOptions.onSummary = onSummary;
+  }
+
+  return createRuntimeGate(runtimeGateOptions);
 }
 
 export function isToolTraceEvent(

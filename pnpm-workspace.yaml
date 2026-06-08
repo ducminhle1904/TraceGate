@@ -2,3 +2,4 @@ packages:
   - "packages/*"
   - "examples/*"
   - "examples/*/packages/*"
+  - "templates/agent-stacks/*"

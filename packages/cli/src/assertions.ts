@@ -7,6 +7,7 @@ import type {
   ToolCallRecord,
   TraceEvent,
 } from "@tracegate/core";
+import { summarizeSideEffectSafety } from "@tracegate/core";
 
 import type { TraceGateRunnerResult } from "./config.js";
 import { formatLimited, formatPolicyDiagnostic } from "./errors.js";
@@ -172,6 +173,7 @@ function formatPolicyVerdictDetails(records: ToolCallRecord[]): string {
         return "";
       }
       const diagnostics = verdict.diagnostics ?? [];
+      const sideEffectSafety = summarizeSideEffectSafety(record);
       const approval = [...diagnostics]
         .reverse()
         .map((diagnostic) => diagnostic.approval)
@@ -181,7 +183,12 @@ function formatPolicyVerdictDetails(records: ToolCallRecord[]): string {
         `riskTier=${record.riskTier}`,
         `finalVerdict=${verdict.status}`,
         approval ? `approval=${approval}` : undefined,
-        `toolExecuted=${record.status !== "blocked"}`,
+        `handlerExecuted=${sideEffectSafety.handlerExecuted}`,
+        sideEffectSafety.handlerSkippedReason
+          ? `handlerSkippedReason=${sideEffectSafety.handlerSkippedReason}`
+          : undefined,
+        `sideEffectPrevented=${sideEffectSafety.sideEffectPrevented}`,
+        `toolExecuted=${sideEffectSafety.handlerExecuted}`,
         diagnostics.length > 0
           ? `diagnostics=${formatLimited(diagnostics.map(formatPolicyDiagnostic))}`
           : undefined,

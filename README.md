@@ -75,12 +75,20 @@ Expected result:
 - The contract was loaded, the policy gate returned `review`, the tool was blocked before
   execution, and replay confirmed the stored behavior is still stable.
 
-For a new project, create a starter matrix config and run it through the CLI:
+For a new project, create a starter config, runtime replay fixture, JSONL trace, and
+redaction check:
 
 ```bash
 pnpm exec tracegate init
+pnpm exec tracegate doctor
 pnpm exec tracegate test
+pnpm exec tracegate replay-runtime tracegate/fixtures/example-runtime.ts --trace tracegate/traces/example-runtime.jsonl
+pnpm exec tsx tracegate/redaction-check.ts
 ```
+
+`tracegate doctor` prints `[OK]`, `[WARN]`, and `[FAIL]` lines for package versions,
+module resolution, schema compatibility, config imports, and config shape. Warnings are
+actionable but do not fail the command; failures are intended to catch CI-breaking setup issues.
 
 ## Runtime Example
 
@@ -165,6 +173,9 @@ const gate = createRuntimeGate({
       finalVerdict: summary.finalVerdict?.status,
       diagnostics: summary.diagnostics.map((item) => item.rule),
       handlerExecuted: summary.handlerExecuted,
+      handlerSkippedReason: summary.handlerSkippedReason,
+      sideEffectPrevented: summary.sideEffectPrevented,
+      wouldHaveExecutedInShadow: summary.wouldHaveExecutedInShadow,
     });
   },
 });
@@ -175,7 +186,9 @@ const guardedTool = gate.wrapTool(contract, existingToolHandler);
 Runtime gate traces are tool-boundary traces by default. Enable `traceRunEvents: true` only when
 the host app wants harness-like `run.started` / `run.finished` events around each guarded call.
 For default runtime-gate JSONL traces, use `tracegate replay-runtime` to compare boundary events
-without requiring a `tracegate.config.ts` runner.
+without requiring a `tracegate.config.ts` runner. Runtime fixtures use tool-boundary counts and
+ordered-subset tool event matching so approval-denied or runtime-block probes do not depend on
+full-run event counts.
 
 ## Matrix Testing
 
@@ -266,8 +279,10 @@ allow, review, or block.
 ## Adapters And Exports
 
 ```ts
+import { createTraceGateFunctionRegistry } from "@tracegate/adapters/plain-functions";
 import { createTraceGateOpenAIAgentsTool } from "@tracegate/adapters/openai-agents";
 import { createTraceGateLangGraphTool } from "@tracegate/adapters/langgraph";
+import { createTraceGateVercelAITool } from "@tracegate/adapters/vercel-ai-sdk";
 import { createOpenTelemetryTraceSink } from "@tracegate/adapters/opentelemetry";
 ```
 
@@ -275,8 +290,10 @@ import { createOpenTelemetryTraceSink } from "@tracegate/adapters/opentelemetry"
 | --- | --- |
 | `@tracegate/core` | Contracts, runtime harness, traces, replay schemas, policy, redaction |
 | `@tracegate/cli` | Matrix tests, replay, fixture creation, JSON and JUnit reports |
+| `@tracegate/adapters/plain-functions` | Runtime-gate wrappers for existing function registries |
 | `@tracegate/adapters/openai-agents` | OpenAI Agents SDK function tools |
 | `@tracegate/adapters/langgraph` | LangGraph/LangChain structured tools |
+| `@tracegate/adapters/vercel-ai-sdk` | Vercel AI SDK `tool()` wrappers |
 | `@tracegate/adapters/opentelemetry` | OpenTelemetry trace sink and event attributes |
 | `@tracegate/adapters/braintrust` | Braintrust-compatible eval rows |
 | `@tracegate/adapters/langfuse` | Langfuse-compatible trace events |
@@ -297,6 +314,12 @@ Run every local example:
 
 ```bash
 pnpm examples:check
+```
+
+Run every agent stack template:
+
+```bash
+pnpm templates:check
 ```
 
 ## Compatibility
@@ -325,6 +348,7 @@ guardrails, observability dashboards, runtime sandboxing, or human review for hi
 - [Tool-call contracts](docs/concepts/tool-call-contracts.md)
 - [Replay](docs/concepts/replay.md)
 - [Framework adapters](docs/guides/framework-adapters.md)
+- [Agent stack templates](docs/guides/agent-stack-templates.md)
 - [CI guide](docs/guides/ci.md)
 - [Policy cookbook](docs/guides/policy-cookbook.md)
 - [Redaction guide](docs/guides/redaction.md)
@@ -344,14 +368,16 @@ guardrails, observability dashboards, runtime sandboxing, or human review for hi
 
 This branch prepares:
 
-- `@tracegate/core@0.3.1`
-- `@tracegate/cli@0.3.1`
-- `@tracegate/adapters@0.3.1`
+- `@tracegate/core@0.5.1`
+- `@tracegate/cli@0.5.1`
+- `@tracegate/adapters@0.5.1`
 - Runnable local examples with no model/API credentials required.
+- Runnable agent stack templates for plain functions, OpenAI Agents, LangGraph/LangChain,
+  and Vercel AI SDK.
 - A VitePress docs site built from the Markdown docs in this repo.
 
-The next product work should focus on deeper adapter coverage and broader production-style
-runtime gates from real agent workflows.
+Runtime gates now support targeted production enforcement by `toolNames`, `riskTiers`, and
+`validationOnly`, while keeping auth, IAM, and business authorization app-owned.
 
 ## Contributing
 

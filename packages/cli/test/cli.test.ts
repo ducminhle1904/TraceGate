@@ -1,10 +1,11 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../src/cli.js";
+import { loadTypeScriptModule } from "../src/config-loader.js";
 
 const timestamp = "2026-06-07T00:00:00.000Z";
 
@@ -136,6 +137,9 @@ export default {
 
       expect(io.stdoutText()).toContain("riskTier=high");
       expect(io.stdoutText()).toContain("reasons=Blocked by test policy.");
+      expect(io.stdoutText()).toContain("handlerExecuted=false");
+      expect(io.stdoutText()).toContain("handlerSkippedReason=policy-blocked");
+      expect(io.stdoutText()).toContain("sideEffectPrevented=true");
       expect(io.stdoutText()).toContain("diagnostics=policy:blocked-risk-tier");
       expect(io.stdoutText()).toContain("runtime:execution-skipped");
     });
@@ -203,6 +207,9 @@ export default {
       expect(io.stdoutText()).toContain("riskTier=high");
       expect(io.stdoutText()).toContain("finalVerdict=block");
       expect(io.stdoutText()).toContain("approval=denied");
+      expect(io.stdoutText()).toContain("handlerExecuted=false");
+      expect(io.stdoutText()).toContain("handlerSkippedReason=approval-denied");
+      expect(io.stdoutText()).toContain("sideEffectPrevented=true");
       expect(io.stdoutText()).toContain("toolExecuted=false");
       expect(io.stdoutText()).toContain("policy:approval-denied");
       expect(io.stdoutText()).toContain("approval-handler:approval-denied");
@@ -262,7 +269,47 @@ export default {
       await expect(readFile(join(cwd, "tracegate.config.ts"), "utf8")).resolves.toContain(
         "defineTraceGateConfig",
       );
+      await expect(
+        readFile(join(cwd, "tracegate/fixtures/example-runtime.ts"), "utf8"),
+      ).resolves.toContain("defineReplayFixture");
+      await expect(
+        readFile(join(cwd, "tracegate/traces/example-runtime.jsonl"), "utf8"),
+      ).resolves.toContain("tool.succeeded");
+      await expect(readFile(join(cwd, "tracegate/redaction-check.ts"), "utf8")).resolves.toContain(
+        "assertNoSecretLikeValues",
+      );
+
+      const testIo = createIo(cwd);
+      await expect(runCli(["test", "--json"], testIo)).resolves.toBe(0);
+      expect(JSON.parse(testIo.stdoutText())).toMatchObject({
+        status: "passed",
+        cases: [{ id: "example-runtime", status: "passed" }],
+      });
+
+      const replayIo = createIo(cwd);
+      await expect(
+        runCli(
+          [
+            "replay-runtime",
+            "tracegate/fixtures/example-runtime.ts",
+            "--trace",
+            "tracegate/traces/example-runtime.jsonl",
+            "--json",
+          ],
+          replayIo,
+        ),
+      ).resolves.toBe(0);
+      expect(JSON.parse(replayIo.stdoutText())).toMatchObject({ status: "passed" });
+
+      await expect(
+        loadTypeScriptModule(join(cwd, "tracegate/redaction-check.ts")),
+      ).resolves.toEqual({});
+
       await expect(runCli(["init"], createIo(cwd))).resolves.toBe(1);
+
+      const forceIo = createIo(cwd);
+      await expect(runCli(["init", "--force"], forceIo)).resolves.toBe(0);
+      expect(forceIo.stdoutText()).toContain("Next commands:");
     });
   });
 
@@ -688,7 +735,70 @@ export default {
       const fixture = await readFile(join(cwd, "fixtures/runtime-gate.ts"), "utf8");
       expect(fixture).toContain('"sourceKind": "runtime-gate"');
       expect(fixture).toContain('"traceEventCountMode": "tool-boundary"');
+      expect(fixture).toContain('"toolEventSequenceMode": "ordered-subset"');
+      expect(fixture).toContain('"toolEventSequence"');
       expect(fixture).toContain('"traceEventCount": 2');
+    });
+  });
+
+  it("omits runStatus when creating runtime-gate fixtures from traces with run events", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "runtime-gate-run-events.jsonl"),
+        `${runEvent("run.started", "running")}\n${toolEvent(
+          "tool.blocked",
+          "blocked",
+          "sendEmail",
+          {},
+          "block",
+        )}\n${runEvent(
+          "run.finished",
+          "blocked",
+          `[${toolRecord("tool-1", "sendEmail", "blocked", "block")}]`,
+        )}\n`,
+        "utf8",
+      );
+
+      const io = createIo(cwd);
+      await expect(
+        runCli(
+          [
+            "fixtures",
+            "create",
+            "runtime-gate-run-events.jsonl",
+            "--runtime-gate",
+            "--out",
+            "fixtures/runtime-gate.ts",
+          ],
+          io,
+        ),
+      ).resolves.toBe(0);
+
+      const fixture = await readFile(join(cwd, "fixtures/runtime-gate.ts"), "utf8");
+      expect(fixture).toContain('"sourceKind": "runtime-gate"');
+      expect(fixture.match(/"runStatus": "blocked"/g) ?? []).toHaveLength(1);
+      expect(fixture).toContain('"traceEventCountMode": "tool-boundary"');
+    });
+  });
+
+  it("does not report commented TraceGate imports as unresolved", async () => {
+    await withTempDir(async (cwd) => {
+      await writeConfig(
+        cwd,
+        `// import "@tracegate/adapters/nope";
+const example = 'import "@tracegate/adapters/also-nope"';
+
+export default {
+  matrix: [{ id: "ok", prompt: "Ok", expect: {} }],
+  async runCase() {
+    return { events: [${toolEvent("tool.started", "started", "lookupOrder", {})}] };
+  },
+};`,
+      );
+
+      const io = createIo(cwd);
+      await expect(runCli(["doctor"], io)).resolves.toBe(0);
+      expect(io.stdoutText()).not.toContain("TraceGate config imports unresolved package subpaths");
     });
   });
 
@@ -773,6 +883,105 @@ export default {
     });
   });
 
+  it("replays runtime-gate ordered-subset traces with run lifecycle noise", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "fixture.ts"),
+        replayFixtureModule({
+          expect: {
+            toolSequence: [],
+            toolStatuses: {},
+            policyVerdicts: {},
+            evidence: [],
+            outputKeys: [],
+            toolEventSequence: [
+              {
+                type: "tool.blocked",
+                toolName: "sendEmail",
+                status: "blocked",
+                policyVerdict: "block",
+              },
+            ],
+            toolEventSequenceMode: "ordered-subset",
+            traceEventCount: 1,
+            traceEventCountMode: "tool-boundary",
+          },
+          captured: {
+            traceEventCount: 1,
+          },
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(cwd, "current.jsonl"),
+        `${runEvent("run.started", "running")}\n${toolEvent(
+          "tool.started",
+          "started",
+          "lookupOrder",
+          {},
+          "allow",
+        )}\n${toolEvent("tool.blocked", "blocked", "sendEmail", {}, "block")}\n${runEvent(
+          "run.finished",
+          "blocked",
+        )}\n`,
+        "utf8",
+      );
+
+      const io = createIo(cwd);
+      await expect(
+        runCli(["replay-runtime", "fixture.ts", "--trace", "current.jsonl"], io),
+      ).resolves.toBe(0);
+      expect(io.stdoutText()).toContain("passed");
+    });
+  });
+
+  it("reports runtime-gate ordered-subset approval-denied drift clearly", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "fixture.ts"),
+        replayFixtureModule({
+          expect: {
+            toolSequence: [],
+            toolStatuses: {},
+            policyVerdicts: {},
+            evidence: [],
+            outputKeys: [],
+            toolEventSequence: [
+              {
+                type: "tool.blocked",
+                toolName: "sendEmail",
+                status: "blocked",
+                policyVerdict: "block",
+              },
+            ],
+            toolEventSequenceMode: "ordered-subset",
+            traceEventCount: 1,
+            traceEventCountMode: "tool-boundary",
+          },
+          captured: {
+            traceEventCount: 1,
+          },
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(cwd, "current.jsonl"),
+        `${toolEvent("tool.succeeded", "succeeded", "sendEmail", {}, "allow")}\n`,
+        "utf8",
+      );
+
+      const io = createIo(cwd);
+      await expect(
+        runCli(["replay-runtime", "fixture.ts", "--trace", "current.jsonl"], io),
+      ).resolves.toBe(1);
+      expect(io.stdoutText()).toContain(
+        "Expected tool event tool.blocked:sendEmail:blocked verdict=block",
+      );
+      expect(io.stdoutText()).toContain("Tool event sequence mode: ordered-subset");
+      expect(io.stdoutText()).toContain("Trace event count mode: tool-boundary");
+    });
+  });
+
   it("reports runtime-gate replay drift with boundary mode diagnostics", async () => {
     await withTempDir(async (cwd) => {
       await writeFile(
@@ -813,6 +1022,10 @@ export default {
       );
       expect(io.stdoutText()).toContain("Trace event count mode: tool-boundary.");
       expect(io.stdoutText()).toContain("has no run.finished event");
+      expect(io.stdoutText()).toContain("Side-effect safety: tool=lookupOrder");
+      expect(io.stdoutText()).toContain("handlerExecuted=false");
+      expect(io.stdoutText()).toContain("handlerSkippedReason=policy-blocked");
+      expect(io.stdoutText()).toContain("sideEffectPrevented=true");
     });
   });
 
@@ -1154,6 +1367,82 @@ export default {
       await expect(runCli(["doctor"], valid)).resolves.toBe(0);
       expect(valid.stdoutText()).toContain("[OK] config loads");
       expect(valid.stdoutText()).toContain("[OK] runCase function found");
+      expect(valid.stdoutText()).toContain("TraceGate package versions are compatible");
+    });
+  });
+
+  it("warns about unsupported module resolution for static TraceGate imports", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "tsconfig.json"),
+        JSON.stringify({
+          compilerOptions: {
+            module: "commonjs",
+            moduleResolution: "node",
+          },
+        }),
+        "utf8",
+      );
+      await writeConfig(
+        cwd,
+        `import { defineMatrix } from "@tracegate/core";
+import { defineTraceGateConfig } from "@tracegate/cli/config";
+
+export default defineTraceGateConfig({
+  matrix: defineMatrix([{ id: "ok", prompt: "Ok", expect: {} }]),
+  async runCase() {
+    return { events: [${toolEvent("tool.started", "started", "lookupOrder", {})}] };
+  },
+});`,
+      );
+
+      const io = createIo(cwd);
+      await expect(runCli(["doctor"], io)).resolves.toBe(0);
+      expect(io.stdoutText()).toContain('[WARN] tsconfig uses moduleResolution "node"');
+    });
+  });
+
+  it("fails doctor on TraceGate package version mismatch", async () => {
+    await withTempDir(async (cwd) => {
+      await writeConfig(
+        cwd,
+        `export default {
+  matrix: [{ id: "ok", prompt: "Ok", expect: {} }],
+  async runCase() {
+    return { events: [${toolEvent("tool.started", "started", "lookupOrder", {})}] };
+  },
+};`,
+      );
+      await writeFakeTraceGatePackage(cwd, "@tracegate/core", "0.5.1", {
+        ".": "./dist/index.js",
+      });
+      await writeFakeTraceGatePackage(cwd, "@tracegate/cli", "0.6.0", {
+        "./config": "./dist/config.js",
+      });
+
+      const io = createIo(cwd);
+      await expect(runCli(["doctor"], io)).resolves.toBe(1);
+      expect(io.stdoutText()).toContain("TraceGate package version mismatch");
+    });
+  });
+
+  it("fails doctor on unresolved TraceGate config imports", async () => {
+    await withTempDir(async (cwd) => {
+      await writeConfig(
+        cwd,
+        `import "@tracegate/adapters/nope";
+
+export default {
+  matrix: [{ id: "ok", prompt: "Ok", expect: {} }],
+  async runCase() {
+    return { events: [${toolEvent("tool.started", "started", "lookupOrder", {})}] };
+  },
+};`,
+      );
+
+      const io = createIo(cwd);
+      await expect(runCli(["doctor"], io)).resolves.toBe(1);
+      expect(io.stdoutText()).toContain("TraceGate config imports unresolved package subpaths");
     });
   });
 
@@ -1188,6 +1477,33 @@ async function withTempDir(run: (cwd: string) => Promise<void>): Promise<void> {
 
 async function writeConfig(cwd: string, content: string): Promise<void> {
   await writeFile(join(cwd, "tracegate.config.ts"), content, "utf8");
+}
+
+async function writeFakeTraceGatePackage(
+  cwd: string,
+  packageName: "@tracegate/core" | "@tracegate/cli",
+  version: string,
+  exports: Record<string, string>,
+): Promise<void> {
+  const packageDir = join(cwd, "node_modules", ...packageName.split("/"));
+  await mkdir(join(packageDir, "dist"), { recursive: true });
+  await writeFile(
+    join(packageDir, "package.json"),
+    JSON.stringify(
+      {
+        name: packageName,
+        version,
+        type: "module",
+        exports,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  for (const target of Object.values(exports)) {
+    await writeFile(join(packageDir, target), "export {};\n", "utf8");
+  }
 }
 
 function createIo(cwd: string) {

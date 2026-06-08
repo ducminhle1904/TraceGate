@@ -23,11 +23,19 @@ pnpm --filter tracegate-example-basic-tool-policy test:replay
 ## New Project Flow
 
 ```bash
-pnpm add @tracegate/core
+pnpm add @tracegate/core zod
 pnpm add -D @tracegate/cli
 pnpm exec tracegate init
+pnpm exec tracegate doctor
 pnpm exec tracegate test
+pnpm exec tracegate replay-runtime tracegate/fixtures/example-runtime.ts --trace tracegate/traces/example-runtime.jsonl
+pnpm exec tsx tracegate/redaction-check.ts
 ```
+
+`tracegate init` creates a runnable `tracegate.config.ts`, one matrix case, one runtime
+replay fixture, one JSONL trace, and one redaction check. `tracegate doctor` is the CI
+preflight: `[OK]` means ready, `[WARN]` means actionable but non-blocking, and `[FAIL]`
+means the setup is likely to break local or CI runs.
 
 ## Full Local Verification
 
@@ -41,6 +49,7 @@ pnpm test
 pnpm build
 pnpm docs:build
 pnpm examples:check
+pnpm templates:check
 pnpm release:smoke
 ```
 

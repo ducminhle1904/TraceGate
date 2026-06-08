@@ -22,9 +22,35 @@ export const SideEffectSchema = z
 
 export type SideEffect = z.infer<typeof SideEffectSchema>;
 
-const ZodInputSchema = z.custom<z.ZodType<unknown>>(
-  (value) => value instanceof z.ZodType,
-  "inputSchema must be a Zod schema",
+export type TraceGateSafeParseResult<TOutput = unknown> =
+  | { success: true; data: TOutput }
+  | { success: false; error: unknown };
+
+export interface TraceGateInputSchema<TInput = unknown, TOutput = TInput> {
+  safeParse(input: TInput): TraceGateSafeParseResult<TOutput>;
+}
+
+export type InferToolInput<TInputSchema> = TInputSchema extends z.ZodType
+  ? z.input<TInputSchema>
+  : TInputSchema extends { safeParse(input: infer TInput): unknown }
+    ? TInput
+    : unknown;
+
+export type InferToolOutput<TInputSchema> = TInputSchema extends z.ZodType
+  ? z.output<TInputSchema>
+  : TInputSchema extends { safeParse(input: infer _TInput): infer TResult }
+    ? Extract<TResult, { success: true }> extends { data: infer TOutput }
+      ? TOutput
+      : unknown
+    : unknown;
+
+const ToolInputSchema = z.custom<TraceGateInputSchema>(
+  (value) =>
+    value !== null &&
+    typeof value === "object" &&
+    "safeParse" in value &&
+    typeof value.safeParse === "function",
+  "inputSchema must provide a safeParse(input) function",
 );
 
 export const ToolContractConfigSchema = z
@@ -33,28 +59,26 @@ export const ToolContractConfigSchema = z
     description: z.string().min(1).optional(),
     riskTier: RiskTierSchema,
     requiresApproval: z.boolean().default(false),
-    inputSchema: ZodInputSchema,
+    inputSchema: ToolInputSchema,
     sideEffects: z.array(SideEffectSchema).default([]),
     requiredEvidence: z.array(z.string().min(1)).default([]),
     metadata: JsonObjectSchema.default({}),
   })
   .strict();
 
-export type ToolContractConfig<TInputSchema extends z.ZodType<unknown> = z.ZodType<unknown>> = Omit<
-  z.input<typeof ToolContractConfigSchema>,
-  "inputSchema"
-> & {
-  inputSchema: TInputSchema;
-};
+export type ToolContractConfig<TInputSchema extends TraceGateInputSchema = TraceGateInputSchema> =
+  Omit<z.input<typeof ToolContractConfigSchema>, "inputSchema"> & {
+    inputSchema: TInputSchema;
+  };
 
-export type ToolContract<TInputSchema extends z.ZodType<unknown> = z.ZodType<unknown>> = Omit<
+export type ToolContract<TInputSchema extends TraceGateInputSchema = TraceGateInputSchema> = Omit<
   z.output<typeof ToolContractConfigSchema>,
   "inputSchema"
 > & {
   inputSchema: TInputSchema;
 };
 
-export function defineToolContract<TInputSchema extends z.ZodType<unknown>>(
+export function defineToolContract<TInputSchema extends TraceGateInputSchema>(
   config: ToolContractConfig<TInputSchema>,
 ): ToolContract<TInputSchema> {
   return ToolContractConfigSchema.parse(config) as ToolContract<TInputSchema>;

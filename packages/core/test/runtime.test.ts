@@ -16,6 +16,7 @@ import {
   definePolicy,
   defineToolContract,
   type RuntimeGateSummary,
+  summarizeSideEffectSafety,
   type TraceEvent,
   TraceGateInputValidationError,
   TraceGatePolicyBlockedError,
@@ -61,7 +62,40 @@ describe("runtime gate helper", () => {
 
     await expect(lookup({ orderId: "" })).resolves.toEqual({ ok: true });
     expect(executed).toBe(true);
-    expect(summaries).toMatchObject([{ validationFailed: true, handlerExecuted: true }]);
+    expect(summaries).toMatchObject([
+      {
+        validationFailed: true,
+        handlerExecuted: true,
+        toolExecuted: true,
+        enforcementApplied: false,
+        validationOnly: false,
+      },
+    ]);
+  });
+
+  it("includes stable host logging fields for observed execution summaries", async () => {
+    const summaries: RuntimeGateSummary[] = [];
+    const gate = createRuntimeGate({
+      mode: "observe",
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+    const lookup = gate.wrapTool(lookupOrderContract, async (input) => ({ id: input.orderId }));
+
+    await expect(lookup({ orderId: "order-1" })).resolves.toEqual({ id: "order-1" });
+
+    expect(summaries[0]).toMatchObject({
+      mode: "observe",
+      toolName: "lookupOrder",
+      riskTier: "read",
+      status: "executed",
+      handlerExecuted: true,
+      toolExecuted: true,
+      enforcementApplied: false,
+      validationOnly: false,
+      validationFailed: false,
+    });
   });
 
   it("keeps runtime gate traces tool-boundary only by default", async () => {
@@ -157,6 +191,9 @@ describe("runtime gate helper", () => {
       {
         status: "skipped",
         handlerExecuted: true,
+        toolExecuted: true,
+        enforcementApplied: false,
+        validationOnly: false,
         traceEventCount: 0,
       },
     ]);
@@ -169,9 +206,18 @@ describe("runtime gate helper", () => {
       errorAdapter: (error, context) => ({
         type: "tool_result",
         ok: false,
+        blocked: true,
         errorName: error instanceof Error ? error.name : "unknown",
         tool: context.contract.name,
+        riskTier: context.summary.riskTier,
+        finalVerdict: context.summary.finalVerdict?.status,
+        diagnostics: context.summary.diagnostics.map((diagnostic) => diagnostic.rule),
         executed: context.summary.handlerExecuted,
+        toolExecuted: context.summary.toolExecuted,
+        handlerSkippedReason: context.summary.handlerSkippedReason,
+        sideEffectPrevented: context.summary.sideEffectPrevented,
+        enforcementApplied: context.summary.enforcementApplied,
+        validationOnly: context.summary.validationOnly,
       }),
     });
     let executed = false;
@@ -183,9 +229,126 @@ describe("runtime gate helper", () => {
     await expect(lookup({ orderId: "" })).resolves.toEqual({
       type: "tool_result",
       ok: false,
+      blocked: true,
       errorName: "TraceGateInputValidationError",
       tool: "lookupOrder",
+      riskTier: "read",
       executed: false,
+      toolExecuted: false,
+      handlerSkippedReason: "validation-failed",
+      sideEffectPrevented: true,
+      enforcementApplied: true,
+      validationOnly: true,
+      diagnostics: [],
+    });
+    expect(executed).toBe(false);
+  });
+
+  it("scopes enforcement by tool name", async () => {
+    const gate = createRuntimeGate({
+      mode: "enforce",
+      enforcement: { toolNames: ["lookupOrder"] },
+    });
+    const lookup = gate.wrapTool(lookupOrderContract, async () => ({ ok: "lookup" }));
+    const other = gate.wrapTool(otherLookupContract, async () => ({ ok: "other" }));
+
+    await expect(lookup({ orderId: "" })).rejects.toBeInstanceOf(TraceGateInputValidationError);
+    await expect(other({ orderId: "" })).resolves.toEqual({ ok: "other" });
+  });
+
+  it("combines enforcement tool names and risk tiers", async () => {
+    const gate = createRuntimeGate({
+      mode: "enforce",
+      enforcement: { toolNames: ["lookupOrder"], riskTiers: ["high"] },
+    });
+    const lookup = gate.wrapTool(lookupOrderContract, async () => ({ ok: "read-risk" }));
+    const refund = gate.wrapTool(refundContract, async () => ({ ok: "high-risk" }));
+
+    await expect(lookup({ orderId: "" })).resolves.toEqual({ ok: "read-risk" });
+    await expect(refund({ orderId: "", amount: -1 })).resolves.toEqual({ ok: "high-risk" });
+  });
+
+  it("validation-only enforcement does not block policy review verdicts", async () => {
+    const summaries: RuntimeGateSummary[] = [];
+    const gate = createRuntimeGate({
+      mode: "enforce",
+      enforcement: { validationOnly: true, riskTiers: ["high"] },
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+    let executed = false;
+    const refund = gate.wrapTool(refundContract, async () => {
+      executed = true;
+      return { ok: true };
+    });
+
+    await expect(refund({ orderId: "order-1", amount: 10 })).resolves.toEqual({ ok: true });
+    expect(executed).toBe(true);
+    expect(summaries[0]).toMatchObject({
+      status: "executed",
+      toolExecuted: true,
+      sideEffectPrevented: false,
+      enforcementApplied: true,
+      validationOnly: true,
+      finalVerdict: {
+        status: "review",
+      },
+    });
+  });
+
+  it("adapts blocked tool errors into host SSE envelopes with stable summary fields", async () => {
+    const gate = createRuntimeGate({
+      mode: "enforce",
+      enforcement: { toolNames: ["lookupOrder"] },
+      context: {
+        sessionId: "session-1",
+        metadata: {
+          toolCallId: "host-call-1",
+          episodeId: "episode-1",
+        },
+      },
+      errorAdapter: (error, context) => ({
+        event: "tracegate.tool.blocked",
+        data: {
+          ok: false,
+          blocked: true,
+          toolName: context.summary.toolName,
+          riskTier: context.summary.riskTier,
+          finalVerdict: context.summary.finalVerdict?.status,
+          diagnostics: context.summary.diagnostics.map((diagnostic) => diagnostic.rule),
+          message: error instanceof Error ? error.message : String(error),
+          hostToolCallId: context.summary.context?.metadata?.toolCallId,
+          toolExecuted: context.summary.toolExecuted,
+          handlerSkippedReason: context.summary.handlerSkippedReason,
+          sideEffectPrevented: context.summary.sideEffectPrevented,
+          enforcementApplied: context.summary.enforcementApplied,
+          validationOnly: context.summary.validationOnly,
+        },
+      }),
+    });
+    let executed = false;
+    const lookup = gate.wrapTool(lookupOrderContract, async () => {
+      executed = true;
+      return { ok: true };
+    });
+
+    await expect(lookup({ orderId: "" })).resolves.toEqual({
+      event: "tracegate.tool.blocked",
+      data: {
+        ok: false,
+        blocked: true,
+        toolName: "lookupOrder",
+        riskTier: "read",
+        message: "Tool input failed contract validation.",
+        hostToolCallId: "host-call-1",
+        toolExecuted: false,
+        handlerSkippedReason: "validation-failed",
+        sideEffectPrevented: true,
+        enforcementApplied: true,
+        validationOnly: false,
+        diagnostics: [],
+      },
     });
     expect(executed).toBe(false);
   });
@@ -213,13 +376,22 @@ describe("runtime gate helper", () => {
     expect(summaries[0]).toMatchObject({
       traceEventTypes: ["run.started", "tool.blocked", "run.finished"],
       toolCallId: expect.stringMatching(/^tool_/),
+      toolExecuted: false,
+      handlerSkippedReason: "validation-failed",
+      sideEffectPrevented: true,
+      enforcementApplied: true,
+      validationOnly: false,
     });
   });
 
   it("blocks denied approval with the same diagnostics as the harness path", async () => {
+    const summaries: RuntimeGateSummary[] = [];
     const gate = createRuntimeGate({
       mode: "enforce",
       approvalHandler: () => ({ status: "denied", reason: "Manager rejected the refund." }),
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
     });
     let executed = false;
     const refund = gate.wrapTool(refundContract, async () => {
@@ -243,10 +415,84 @@ describe("runtime gate helper", () => {
       },
     });
     expect(executed).toBe(false);
+    expect(summaries[0]).toMatchObject({
+      handlerExecuted: false,
+      handlerSkippedReason: "approval-denied",
+      sideEffectPrevented: true,
+    });
+  });
+
+  it("summarizes failed host tool execution with stable logging fields", async () => {
+    const summaries: RuntimeGateSummary[] = [];
+    const gate = createRuntimeGate({
+      mode: "observe",
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+    const lookup = gate.wrapTool(lookupOrderContract, async () => {
+      throw new Error("host tool failed");
+    });
+
+    await expect(lookup({ orderId: "order-1" })).rejects.toBeInstanceOf(
+      TraceGateToolExecutionError,
+    );
+    expect(summaries[0]).toMatchObject({
+      status: "failed",
+      handlerExecuted: true,
+      toolExecuted: true,
+      enforcementApplied: false,
+      validationOnly: false,
+      validationFailed: false,
+    });
+  });
+
+  it("records side-effect prevention for policy block and review-required paths", async () => {
+    const blockedSummaries: RuntimeGateSummary[] = [];
+    const blockedGate = createRuntimeGate({
+      mode: "enforce",
+      policyEvaluator: ({ contract }) => ({
+        status: "block",
+        reasons: ["Blocked by test policy."],
+        riskTier: contract.riskTier,
+        toolName: contract.name,
+      }),
+      onSummary: (summary) => {
+        blockedSummaries.push(summary);
+      },
+    });
+    const blockedLookup = blockedGate.wrapTool(lookupOrderContract, async () => ({ ok: true }));
+
+    await expect(blockedLookup({ orderId: "order-1" })).rejects.toBeInstanceOf(
+      TraceGatePolicyBlockedError,
+    );
+    expect(blockedSummaries[0]).toMatchObject({
+      handlerExecuted: false,
+      handlerSkippedReason: "policy-blocked",
+      sideEffectPrevented: true,
+    });
+
+    const reviewSummaries: RuntimeGateSummary[] = [];
+    const reviewGate = createRuntimeGate({
+      mode: "enforce",
+      onSummary: (summary) => {
+        reviewSummaries.push(summary);
+      },
+    });
+    const reviewRefund = reviewGate.wrapTool(refundContract, async () => ({ ok: true }));
+
+    await expect(reviewRefund({ orderId: "order-1", amount: 10 })).rejects.toBeInstanceOf(
+      TraceGateReviewRequiredError,
+    );
+    expect(reviewSummaries[0]).toMatchObject({
+      handlerExecuted: false,
+      handlerSkippedReason: "review-required",
+      sideEffectPrevented: true,
+    });
   });
 
   it("summarizes shadow policy mismatches without blocking", async () => {
-    const summaries: Array<{ shadowComparison?: { classifications: string[] } | undefined }> = [];
+    const summaries: RuntimeGateSummary[] = [];
     const gate = createRuntimeGate({
       mode: "shadow",
       policyEvaluator: ({ contract }) => ({
@@ -271,6 +517,11 @@ describe("runtime gate helper", () => {
     expect(summaries[0]?.shadowComparison?.classifications).toContain(
       "runtime_allow_tracegate_block",
     );
+    expect(summaries[0]).toMatchObject({
+      handlerExecuted: true,
+      sideEffectPrevented: false,
+      wouldHaveExecutedInShadow: false,
+    });
   });
 
   it("starts runtime verdict evaluation before shadow policy resolution completes", async () => {
@@ -389,10 +640,91 @@ describe("runtime gate helper", () => {
       }).classifications,
     ).toEqual(["runtime_allow_tracegate_review"]);
   });
+
+  it("summarizes side-effect safety from runtime summaries and tool records", () => {
+    const summary = summarizeSideEffectSafety({
+      mode: "enforce",
+      toolName: "issueRefund",
+      riskTier: "high",
+      status: "blocked",
+      handlerExecuted: false,
+      toolExecuted: false,
+      handlerSkippedReason: "approval-denied",
+      sideEffectPrevented: true,
+      validationFailed: false,
+      finalVerdict: {
+        status: "block",
+        reasons: ["Approval denied."],
+        riskTier: "high",
+        toolName: "issueRefund",
+        diagnostics: [
+          {
+            source: "approval-handler",
+            rule: "approval-denied",
+            message: "Denied.",
+          },
+        ],
+      },
+      diagnostics: [
+        {
+          source: "approval-handler",
+          rule: "approval-denied",
+          message: "Denied.",
+        },
+      ],
+      traceEventTypes: ["tool.blocked"],
+      traceEventCount: 1,
+      secretLeakFindingCount: 0,
+    });
+
+    expect(summary).toEqual({
+      handlerExecuted: false,
+      handlerSkippedReason: "approval-denied",
+      sideEffectPrevented: true,
+      toolName: "issueRefund",
+      riskTier: "high",
+      finalVerdict: "block",
+      diagnosticRules: ["approval-handler:approval-denied"],
+    });
+
+    expect(
+      summarizeSideEffectSafety({
+        id: "tool-1",
+        runId: "run-1",
+        toolName: "issueRefund",
+        timestamp: "2026-06-07T00:00:00.000Z",
+        status: "blocked",
+        riskTier: "high",
+        policyVerdict: {
+          status: "review",
+          reasons: ["Approval required."],
+          riskTier: "high",
+          toolName: "issueRefund",
+        },
+      }),
+    ).toMatchObject({
+      handlerExecuted: false,
+      handlerSkippedReason: "review-required",
+      sideEffectPrevented: true,
+      finalVerdict: "review",
+    });
+
+    expect(summarizeSideEffectSafety({})).toEqual({
+      handlerExecuted: false,
+      sideEffectPrevented: false,
+      diagnosticRules: [],
+    });
+  });
 });
 
 const lookupOrderContract = defineToolContract({
   name: "lookupOrder",
+  riskTier: "read",
+  inputSchema: LookupInputSchema,
+});
+
+const otherLookupContract = defineToolContract({
+  name: "otherLookup",
   riskTier: "read",
   inputSchema: LookupInputSchema,
 });

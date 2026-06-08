@@ -37,6 +37,7 @@ export default defineConfig({
           { text: "Redaction", link: "/guides/redaction" },
           { text: "Runtime Integration", link: "/guides/runtime-integration" },
           { text: "Framework Adapters", link: "/guides/framework-adapters" },
+          { text: "Agent Stack Templates", link: "/guides/agent-stack-templates" },
           { text: "Release Checklist", link: "/guides/release-checklist" },
         ],
       },

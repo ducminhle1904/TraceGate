@@ -159,10 +159,37 @@ tracegate replay-runtime fixtures/runtime-gate.ts --trace traces/current-runtime
 tracegate replay-runtime fixtures/runtime-gate.ts --trace traces/current-runtime-gate.jsonl --junit tracegate-runtime-replay.xml
 ```
 
-Runtime-gate fixtures created from default boundary traces use
-`traceEventCountMode: "tool-boundary"`. That compares ordered `tool.*` events and ignores the
-absence of `run.started` / `run.finished`. Fixtures captured with `traceRunEvents: true` keep
-the normal exact event-count behavior.
+Runtime-gate fixtures use `traceEventCountMode: "tool-boundary"` and
+`toolEventSequenceMode: "ordered-subset"`. Boundary mode counts only `tool.*` events and ignores
+`run.started` / `run.finished` lifecycle noise. Ordered subset mode is useful for production JSONL
+where the host may add unrelated tool events, but the approval-denied or runtime-block path must
+still appear in order.
+
+For a NodeTrader-style approval-denied probe, keep the expected boundary event small:
+
+```json
+{
+  "toolEventSequence": [
+    {
+      "type": "tool.blocked",
+      "toolName": "sendOrder",
+      "status": "blocked",
+      "policyVerdict": "block"
+    }
+  ],
+  "toolEventSequenceMode": "ordered-subset",
+  "traceEventCountMode": "tool-boundary"
+}
+```
+
+When a current runtime trace drifts, `tracegate replay-runtime` prints side-effect safety evidence
+for blocked tool records, including `handlerExecuted=false`, `handlerSkippedReason`, and
+`sideEffectPrevented=true`. Programmatic callers can derive the same evidence with
+`summarizeSideEffectSafety(eventOrRecord)` from `@tracegate/core`.
+
+If a fixture explicitly expects `runStatus`, replay still requires a `run.finished` event. Otherwise,
+runtime-gate replay does not depend on run lifecycle events, even when `traceRunEvents: true` was
+enabled during capture.
 
 Refresh fixture expectations from current behavior:
 

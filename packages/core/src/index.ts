@@ -44,6 +44,8 @@ export type {
   ReplayFixtureInput,
   ReplayOutputKeysMode,
   ReplaySource,
+  ReplayToolEventExpectation,
+  ReplayToolEventSequenceMode,
   ReplayTraceEventCountMode,
   ReplayTraceSummary,
   TraceJsonlChunk,
@@ -57,6 +59,8 @@ export {
   ReplayExpectationSchema,
   ReplayFixtureSchema,
   ReplayOutputKeysModeSchema,
+  ReplayToolEventExpectationSchema,
+  ReplayToolEventSequenceModeSchema,
   ReplayTraceEventCountModeSchema,
   ReplayTraceSummarySchema,
   summarizeReplaySource,
@@ -96,6 +100,11 @@ export {
   summarizePolicyComparisons,
 } from "./runtime/runtime-gate.js";
 export type {
+  HandlerSkippedReason,
+  SideEffectSafetySummary,
+} from "./runtime/side-effect-safety.js";
+export { summarizeSideEffectSafety } from "./runtime/side-effect-safety.js";
+export type {
   EvidenceTraceEvent,
   MemoryTraceSink,
   RunTraceEvent,
@@ -132,10 +141,14 @@ export {
   HarnessSurfaceSchema,
 } from "./schema/surface.js";
 export type {
+  InferToolInput,
+  InferToolOutput,
   RiskTier,
   SideEffect,
   ToolContract,
   ToolContractConfig,
+  TraceGateInputSchema,
+  TraceGateSafeParseResult,
 } from "./schema/tool-contract.js";
 export {
   defineToolContract,

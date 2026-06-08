@@ -1,5 +1,3 @@
-import type { z } from "zod";
-
 import type { JsonObject } from "./json.js";
 import {
   defineToolContract,
@@ -8,6 +6,7 @@ import {
   type SideEffect,
   type ToolContract,
   type ToolContractConfig,
+  type TraceGateInputSchema,
 } from "./tool-contract.js";
 
 export type ToolManifestValue<TManifest, TValue> = TValue | ((manifest: TManifest) => TValue);
@@ -24,7 +23,7 @@ export interface MapRiskTierOptions<TManifest = unknown> {
 
 export interface ToolContractAdapterConfig<
   TManifest,
-  TInputSchema extends z.ZodType<unknown> = z.ZodType<unknown>,
+  TInputSchema extends TraceGateInputSchema = TraceGateInputSchema,
 > {
   name: ToolManifestValue<TManifest, string>;
   riskTier: ToolManifestValue<TManifest, unknown>;
@@ -39,12 +38,12 @@ export interface ToolContractAdapterConfig<
 }
 
 export type ToolContractManifestOverrides<
-  TInputSchema extends z.ZodType<unknown> = z.ZodType<unknown>,
+  TInputSchema extends TraceGateInputSchema = TraceGateInputSchema,
 > = Partial<ToolContractConfig<TInputSchema>>;
 
 export type ToolContractAdapter<
   TManifest,
-  TInputSchema extends z.ZodType<unknown> = z.ZodType<unknown>,
+  TInputSchema extends TraceGateInputSchema = TraceGateInputSchema,
 > = (
   manifest: TManifest,
   overrides?: ToolContractManifestOverrides<TInputSchema>,
@@ -52,7 +51,7 @@ export type ToolContractAdapter<
 
 export interface ManifestContractAdapterConfig<
   TManifest,
-  TSchemaMap extends Record<string, z.ZodType<unknown>>,
+  TSchemaMap extends Record<string, TraceGateInputSchema>,
 > {
   registry: readonly TManifest[] | Record<string, TManifest>;
   schemas: TSchemaMap;
@@ -67,7 +66,7 @@ export interface ManifestContractAdapterConfig<
   getMetadata?: (manifest: TManifest) => JsonObject | undefined;
 }
 
-export type LooseManifestSchemaMap = Record<string, z.ZodTypeAny>;
+export type LooseManifestSchemaMap = Record<string, TraceGateInputSchema>;
 
 export interface LooseManifestContractAdapterConfig<TManifest> {
   registry: readonly TManifest[] | Record<string, TManifest>;
@@ -85,7 +84,7 @@ export interface LooseManifestContractAdapterConfig<TManifest> {
 
 export interface ManifestContractAdapter<
   _TManifest,
-  TSchemaMap extends Record<string, z.ZodType<unknown>>,
+  TSchemaMap extends Record<string, TraceGateInputSchema>,
 > {
   readonly contracts: Record<string, ToolContract<TSchemaMap[keyof TSchemaMap]>>;
   getContract(name: keyof TSchemaMap & string): ToolContract<TSchemaMap[keyof TSchemaMap]>;
@@ -119,7 +118,7 @@ export function mapRiskTier<TManifest = unknown>(
 
 export function createToolContractAdapter<
   TManifest,
-  TInputSchema extends z.ZodType<unknown> = z.ZodType<unknown>,
+  TInputSchema extends TraceGateInputSchema = TraceGateInputSchema,
 >(
   config: ToolContractAdapterConfig<TManifest, TInputSchema>,
 ): ToolContractAdapter<TManifest, TInputSchema> {
@@ -128,7 +127,7 @@ export function createToolContractAdapter<
 
 export function createManifestContractAdapter<
   TManifest,
-  TSchemaMap extends Record<string, z.ZodType<unknown>>,
+  TSchemaMap extends Record<string, TraceGateInputSchema>,
 >(
   config: ManifestContractAdapterConfig<TManifest, TSchemaMap>,
 ): ManifestContractAdapter<TManifest, TSchemaMap> {
@@ -180,7 +179,7 @@ export function createLooseManifestContractAdapter<TManifest>(
 
 export function defineToolContractFromManifest<
   TManifest,
-  TInputSchema extends z.ZodType<unknown> = z.ZodType<unknown>,
+  TInputSchema extends TraceGateInputSchema = TraceGateInputSchema,
 >(
   manifest: TManifest,
   config: ToolContractAdapterConfig<TManifest, TInputSchema>,

@@ -89,6 +89,7 @@ console.log(
       blocked,
       validationBlocked,
       sideEffectExecutions,
+      sideEffectPrevented: blocked && sideEffectExecutions === 0,
       tracePath,
       events: events.map((event) => event.type),
       redacted: !trace.includes("sk-proj-1234567890abcdef1234567890abcdef"),

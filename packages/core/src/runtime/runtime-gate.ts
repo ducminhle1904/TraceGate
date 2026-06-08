@@ -1,5 +1,3 @@
-import type { z } from "zod";
-
 import { evaluatePolicy } from "../policy/evaluate-policy.js";
 import type { PolicyDiagnostic, PolicyVerdict, PolicyVerdictStatus } from "../policy/verdict.js";
 import {
@@ -10,7 +8,13 @@ import {
 import type { JsonObject, JsonValue } from "../schema/json.js";
 import type { HarnessContext } from "../schema/surface.js";
 import { HarnessContextSchema } from "../schema/surface.js";
-import type { RiskTier, ToolContract } from "../schema/tool-contract.js";
+import type {
+  InferToolInput,
+  InferToolOutput,
+  RiskTier,
+  ToolContract,
+  TraceGateInputSchema,
+} from "../schema/tool-contract.js";
 import type { ToolCallRecord, ToolCallStatus, TraceGateRunStatus } from "../schema/trace.js";
 import { appendPolicyDiagnostic, resolvePolicyVerdictAfterReview } from "./approval-resolution.js";
 import {
@@ -20,6 +24,11 @@ import {
   TraceGateToolExecutionError,
 } from "./errors.js";
 import type { ApprovalHandler, PolicyEvaluator } from "./harness.js";
+import {
+  type HandlerSkippedReason,
+  inferHandlerSkippedReason,
+  traceGateWouldExecute,
+} from "./side-effect-safety.js";
 import {
   createId,
   createToolCallRecord,
@@ -37,6 +46,7 @@ type RuntimeGateTraceEventInput =
 export interface RuntimeGateEnforcementOptions {
   validationOnly?: boolean;
   riskTiers?: RiskTier[];
+  toolNames?: string[];
 }
 
 export type PolicyComparisonClassification =
@@ -62,6 +72,12 @@ export interface RuntimeGateSummary {
   riskTier: RiskTier;
   status: "executed" | "blocked" | "failed" | "skipped";
   handlerExecuted: boolean;
+  toolExecuted?: boolean | undefined;
+  handlerSkippedReason?: HandlerSkippedReason | undefined;
+  sideEffectPrevented: boolean;
+  wouldHaveExecutedInShadow?: boolean | undefined;
+  enforcementApplied?: boolean | undefined;
+  validationOnly?: boolean | undefined;
   validationFailed: boolean;
   context?: HarnessContext | undefined;
   contractMetadata?: JsonObject | undefined;
@@ -97,10 +113,10 @@ export interface RuntimeGateOptions {
 
 export interface RuntimeGate {
   readonly mode: RuntimeGateMode;
-  wrapTool<TInputSchema extends z.ZodType<unknown>, TResult>(
+  wrapTool<TInputSchema extends TraceGateInputSchema, TResult>(
     contract: ToolContract<TInputSchema>,
-    execute: (input: z.infer<TInputSchema>) => Promise<TResult> | TResult,
-  ): (input: z.input<TInputSchema>) => Promise<TResult | unknown>;
+    execute: (input: InferToolOutput<TInputSchema>) => Promise<TResult> | TResult,
+  ): (input: InferToolInput<TInputSchema>) => Promise<TResult | unknown>;
   resolveContract(toolName: string): ToolContract | undefined;
 }
 
@@ -110,22 +126,26 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
   let writeQueue: Promise<void> = Promise.resolve();
   const policyEvaluator = options.policyEvaluator ?? evaluatePolicy;
 
-  const wrapTool = <TInputSchema extends z.ZodType<unknown>, TResult>(
+  const wrapTool = <TInputSchema extends TraceGateInputSchema, TResult>(
     contract: ToolContract<TInputSchema>,
-    execute: (input: z.infer<TInputSchema>) => Promise<TResult> | TResult,
+    execute: (input: InferToolOutput<TInputSchema>) => Promise<TResult> | TResult,
   ) => {
-    return async (input: z.input<TInputSchema>): Promise<TResult | unknown> => {
+    return async (input: InferToolInput<TInputSchema>): Promise<TResult | unknown> => {
       if (options.mode === "off") {
-        return execute(input as z.infer<TInputSchema>);
+        return execute(input as InferToolOutput<TInputSchema>);
       }
 
       if (!isToolAllowed(contract, options.allowlist)) {
-        const result = await execute(input as z.infer<TInputSchema>);
+        const result = await execute(input as InferToolOutput<TInputSchema>);
         void emitSummary(options, {
           ...createSummaryBase(options, contract, options.context?.runId ?? gateRunId),
           mode: options.mode,
           status: "skipped",
           handlerExecuted: true,
+          toolExecuted: true,
+          enforcementApplied: false,
+          validationOnly: false,
+          sideEffectPrevented: false,
           validationFailed: false,
           diagnostics: [],
           traceEventTypes: [],
@@ -175,11 +195,12 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
           traceEventTypes,
           writeEvent,
           validationFailed: true,
+          handlerSkippedReason: "validation-failed",
         });
         return adaptOrThrow(error, contract, input, summary, options);
       }
 
-      const parsedInput = parsed.success ? parsed.data : (input as z.infer<TInputSchema>);
+      const parsedInput = parsed.success ? parsed.data : (input as InferToolOutput<TInputSchema>);
       const { verdict, shadowComparison } = parsed.success
         ? await resolveGateVerdict({
             contract,
@@ -224,6 +245,7 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
           traceEventTypes,
           writeEvent,
           finalVerdict: blockedVerdict,
+          handlerSkippedReason: inferHandlerSkippedReason({ verdict: blockedVerdict }),
           shadowComparison,
         });
         return adaptOrThrow(error, contract, input, summary, options);
@@ -240,7 +262,7 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
       });
 
       try {
-        const result = await execute(parsedInput);
+        const result = await execute(parsedInput as InferToolOutput<TInputSchema>);
         const succeeded = await writeToolEvent({
           contract,
           runId,
@@ -267,6 +289,11 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
           mode: options.mode,
           status: "executed",
           handlerExecuted: true,
+          toolExecuted: true,
+          sideEffectPrevented: false,
+          ...(shadowComparison
+            ? { wouldHaveExecutedInShadow: getShadowWouldHaveExecuted(shadowComparison) }
+            : {}),
           validationFailed: !parsed.success,
           ...(verdict ? { finalVerdict: verdict } : {}),
           diagnostics: verdict?.diagnostics ?? [],
@@ -309,6 +336,11 @@ export function createRuntimeGate(options: RuntimeGateOptions): RuntimeGate {
           mode: options.mode,
           status: "failed",
           handlerExecuted: true,
+          toolExecuted: true,
+          sideEffectPrevented: false,
+          ...(shadowComparison
+            ? { wouldHaveExecutedInShadow: getShadowWouldHaveExecuted(shadowComparison) }
+            : {}),
           validationFailed: !parsed.success,
           ...(verdict ? { finalVerdict: verdict } : {}),
           diagnostics: verdict?.diagnostics ?? [],
@@ -474,6 +506,7 @@ async function blockBeforeExecution(input: {
   startedAt?: string;
   validationFailed?: boolean;
   finalVerdict?: PolicyVerdict | undefined;
+  handlerSkippedReason?: HandlerSkippedReason | undefined;
   shadowComparison?: PolicyComparisonResult | undefined;
 }): Promise<RuntimeGateSummary> {
   const blocked = await writeToolEvent({
@@ -501,6 +534,17 @@ async function blockBeforeExecution(input: {
     mode: input.options.mode,
     status: "blocked",
     handlerExecuted: false,
+    toolExecuted: false,
+    handlerSkippedReason:
+      input.handlerSkippedReason ??
+      inferHandlerSkippedReason({
+        verdict: input.finalVerdict,
+        validationFailed: input.validationFailed,
+      }),
+    sideEffectPrevented: true,
+    ...(input.shadowComparison
+      ? { wouldHaveExecutedInShadow: getShadowWouldHaveExecuted(input.shadowComparison) }
+      : {}),
     validationFailed: input.validationFailed === true,
     ...(input.finalVerdict ? { finalVerdict: input.finalVerdict } : {}),
     diagnostics: input.finalVerdict?.diagnostics ?? [],
@@ -591,10 +635,18 @@ function createSummaryBase(
   toolCallId?: string,
 ): Pick<
   RuntimeGateSummary,
-  "runId" | "toolCallId" | "toolName" | "riskTier" | "context" | "contractMetadata"
+  | "runId"
+  | "toolCallId"
+  | "toolName"
+  | "riskTier"
+  | "context"
+  | "contractMetadata"
+  | "enforcementApplied"
+  | "validationOnly"
 > {
   const context = normalizeContext(options);
   const contractMetadata = normalizeJsonObject(contract.metadata, options.redaction);
+  const enforcementApplied = isEnforcementApplied(options, contract);
 
   return {
     runId,
@@ -603,6 +655,8 @@ function createSummaryBase(
     riskTier: contract.riskTier,
     ...(context ? { context } : {}),
     ...(contractMetadata && Object.keys(contractMetadata).length > 0 ? { contractMetadata } : {}),
+    enforcementApplied,
+    validationOnly: enforcementApplied && options.enforcement?.validationOnly === true,
   };
 }
 
@@ -635,11 +689,27 @@ function adaptOrThrow(
 }
 
 function shouldEnforce(contract: ToolContract, enforcement: RuntimeGateEnforcementOptions = {}) {
-  return enforcement.riskTiers === undefined || enforcement.riskTiers.includes(contract.riskTier);
+  const riskTierMatches =
+    enforcement.riskTiers === undefined || enforcement.riskTiers.includes(contract.riskTier);
+  const toolNameMatches =
+    enforcement.toolNames === undefined || enforcement.toolNames.includes(contract.name);
+  return riskTierMatches && toolNameMatches;
 }
 
 function isToolAllowed(contract: ToolContract, allowlist: readonly string[] | undefined): boolean {
   return allowlist === undefined || allowlist.includes(contract.name);
+}
+
+function isEnforcementApplied(options: RuntimeGateOptions, contract: ToolContract): boolean {
+  return (
+    options.mode === "enforce" &&
+    isToolAllowed(contract, options.allowlist) &&
+    shouldEnforce(contract, options.enforcement)
+  );
+}
+
+function getShadowWouldHaveExecuted(shadowComparison: PolicyComparisonResult): boolean | undefined {
+  return traceGateWouldExecute(shadowComparison.traceGateVerdict);
 }
 
 function countSecretFindings(value: unknown, options?: RedactValueOptions): number {

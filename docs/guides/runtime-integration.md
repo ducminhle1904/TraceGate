@@ -13,7 +13,7 @@ and you want to audit or gradually enforce TraceGate contracts.
 | `off` | Calls the host handler directly. No validation, trace, or summary is emitted. |
 | `observe` | Validates input, evaluates TraceGate policy, writes redacted traces, and emits summaries, but does not block host execution. |
 | `shadow` | Same as observe, plus compares the host runtime verdict with TraceGate's verdict. Use this before enforcement. |
-| `enforce` | Blocks invalid input, `block` verdicts, and unresolved `review` verdicts for matching risk tiers. |
+| `enforce` | Blocks invalid input, `block` verdicts, and unresolved `review` verdicts for tools matching the configured enforcement scope. |
 
 The intended production rollout is:
 
@@ -21,6 +21,28 @@ The intended production rollout is:
 2. Move high-risk tools to `shadow` and compare current runtime decisions with TraceGate policy.
 3. Enforce read-only or validation-only checks first.
 4. Enforce medium/high side effects only after approval and evidence behavior is proven in matrix/replay tests.
+
+A simple environment mapping keeps rollout explicit:
+
+```ts
+import type { RuntimeGateMode } from "@tracegate/core";
+
+const modeByEnvironment: Record<string, RuntimeGateMode> = {
+  local: "observe",
+  development: "observe",
+  staging: "shadow",
+  production: "shadow",
+};
+
+const mode = modeByEnvironment[process.env.APP_ENV ?? "local"] ?? "observe";
+```
+
+Recommended production defaults:
+
+- Local and development: `observe`.
+- Staging: `shadow`.
+- Initial production rollout: `observe` or `shadow`.
+- Production enforcement: targeted `enforce` with `toolNames`, `riskTiers`, and optionally `validationOnly`.
 
 ## Minimal Wrapper
 
@@ -33,7 +55,11 @@ import {
 
 const gate = createRuntimeGate({
   mode: process.env.TRACEGATE_MODE === "enforce" ? "enforce" : "observe",
-  enforcement: { riskTiers: ["read", "low"] },
+  enforcement: {
+    toolNames: ["lookupOrder", "issueRefund"],
+    riskTiers: ["read", "low"],
+    validationOnly: true,
+  },
   traceSink: createStructuredLoggerTraceSink({
     log: (event) => logger.info({ event }, "tracegate.tool"),
   }),
@@ -45,7 +71,12 @@ const gate = createRuntimeGate({
         finalVerdict: summary.finalVerdict?.status,
         diagnostics: summary.diagnostics.map((item) => item.rule),
         handlerExecuted: summary.handlerExecuted,
-        toolExecuted: summary.handlerExecuted,
+        toolExecuted: summary.toolExecuted,
+        handlerSkippedReason: summary.handlerSkippedReason,
+        sideEffectPrevented: summary.sideEffectPrevented,
+        wouldHaveExecutedInShadow: summary.wouldHaveExecutedInShadow,
+        enforcementApplied: summary.enforcementApplied,
+        validationOnly: summary.validationOnly,
         runId: summary.runId,
         toolCallId: summary.toolCallId,
         hostToolCallId: summary.context?.metadata?.toolCallId,
@@ -79,6 +110,18 @@ const contract = defineToolContractFromManifest(manifest, {
 
 export const guardedHandler = gate.wrapTool(contract, existingHandler);
 ```
+
+`allowlist` and `enforcement.toolNames` solve different rollout problems:
+
+- `allowlist` is a gate inclusion filter. Tools outside the allowlist bypass TraceGate tracing,
+  validation, policy evaluation, and summaries.
+- `enforcement.toolNames` is an enforcement scope. Matching tools are still traced and summarized
+  in `enforce` mode, but TraceGate only blocks calls when the tool name scope, risk tier scope, and
+  mode all match.
+
+Use `allowlist` when only part of a host registry is ready for TraceGate. Use
+`enforcement.toolNames` when every tool should be observed, but only specific tools should be
+blocked.
 
 Runtime gate traces are tool-boundary traces by default. A successful call emits
 `tool.started -> tool.succeeded`; a blocked call emits `tool.blocked`. This differs from
@@ -167,6 +210,32 @@ runtime:execution-skipped
 
 Use replay fixtures to lock that behavior before enabling `enforce` for side-effecting tools.
 
+## Handler Must Not Execute
+
+For side-effecting tools, the runtime summary is the first-class evidence that the host handler did
+or did not run:
+
+```ts
+const gate = createRuntimeGate({
+  mode: "enforce",
+  enforcement: { toolNames: ["sendEmail"], riskTiers: ["high"] },
+  onSummary(summary) {
+    audit.info({
+      toolName: summary.toolName,
+      handlerExecuted: summary.handlerExecuted,
+      handlerSkippedReason: summary.handlerSkippedReason,
+      sideEffectPrevented: summary.sideEffectPrevented,
+      finalVerdict: summary.finalVerdict?.status,
+    });
+  },
+});
+```
+
+Validation failures, policy blocks, missing review approval, and denied approval all report
+`handlerExecuted=false` and `sideEffectPrevented=true` when enforcement applies. In `shadow` mode,
+TraceGate never blocks the host handler; use `wouldHaveExecutedInShadow=false` to see that
+TraceGate would have prevented the side effect if enforcement were enabled.
+
 ## Production Sinks And Replay Boundaries
 
 Use JSONL sinks for local development and CI artifacts by default. In staging or production,
@@ -191,9 +260,11 @@ Replay a new runtime-gate trace against that fixture without loading `tracegate.
 tracegate replay-runtime fixtures/runtime-gate.ts --trace traces/current-runtime-gate.jsonl
 ```
 
-Default runtime-gate fixtures use `traceEventCountMode: "tool-boundary"`, which compares
-ordered `tool.*` events and ignores missing run lifecycle events. If `traceRunEvents: true`
-was enabled during capture, fixtures can keep exact full-run event counts.
+Default runtime-gate fixtures use `traceEventCountMode: "tool-boundary"` and
+`toolEventSequenceMode: "ordered-subset"`. This compares stable `tool.*` behavior without
+depending on `run.started` / `run.finished` or unrelated extra tool events in production JSONL.
+For approval-denied or runtime-block probes, assert the blocked boundary event and verdict rather
+than the full event count.
 
 ## Error Adapter
 
@@ -217,6 +288,70 @@ const gate = createRuntimeGate({
 
 This keeps the host app stable while matrix tests can still inspect trace events and policy
 diagnostics.
+
+For Server-Sent Events, keep the same summary fields compact:
+
+```ts
+const gate = createRuntimeGate({
+  mode: "enforce",
+  enforcement: { toolNames: ["issueRefund"], riskTiers: ["high", "critical"] },
+  errorAdapter(error, context) {
+    return {
+      event: "tracegate.tool.blocked",
+      data: {
+        ok: false,
+        blocked: true,
+        toolName: context.summary.toolName,
+        riskTier: context.summary.riskTier,
+        finalVerdict: context.summary.finalVerdict?.status,
+        diagnostics: context.summary.diagnostics,
+        message: error instanceof Error ? error.message : String(error),
+        toolCallId: context.summary.context?.metadata?.toolCallId,
+        episodeId: context.summary.context?.metadata?.episodeId,
+      },
+    };
+  },
+});
+```
+
+For tool-result envelopes, return the host shape while preserving TraceGate diagnostics:
+
+```ts
+const gate = createRuntimeGate({
+  mode: "enforce",
+  enforcement: { toolNames: ["issueRefund"], riskTiers: ["high"] },
+  errorAdapter(error, context) {
+    return {
+      ok: false,
+      blocked: true,
+      toolName: context.summary.toolName,
+      riskTier: context.summary.riskTier,
+      finalVerdict: context.summary.finalVerdict?.status,
+      diagnostics: context.summary.diagnostics.map((item) => item.rule),
+      message: error instanceof Error ? error.message : String(error),
+      toolExecuted: context.summary.toolExecuted,
+      enforcementApplied: context.summary.enforcementApplied,
+      validationOnly: context.summary.validationOnly,
+    };
+  },
+});
+```
+
+## Auth And Business Policy Boundary
+
+TraceGate does not replace application authorization, IAM, broker permissions, business policy,
+provider gateway guardrails, or human approval workflows. Keep those checks app-owned.
+
+A production host typically runs:
+
+1. User authentication, tenant authorization, and broker/account permission checks.
+2. Existing host business policy or provider guardrails.
+3. TraceGate observation, shadow comparison, or targeted enforcement at the tool boundary.
+4. Host tool dispatch and app-owned audit logging.
+
+For a NodeTrader-like tool, the broker permission remains app-owned. TraceGate proves that the
+agent-facing tool contract has the expected risk tier, approval behavior, evidence requirements,
+redaction, trace shape, and replay expectations.
 
 ## CommonJS Hosts
 
