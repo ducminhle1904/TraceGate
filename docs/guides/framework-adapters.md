@@ -18,6 +18,18 @@ Use the templates when you want a runnable stack starter:
 pnpm templates:check
 ```
 
+Every template prints the same side-effect readiness fields:
+
+```ts
+{
+  handlerExecuted: summary.handlerExecuted,
+  toolExecuted: summary.toolExecuted,
+  handlerSkippedReason: summary.handlerSkippedReason,
+  sideEffectPrevented: summary.sideEffectPrevented,
+  wouldHaveExecutedInShadow: summary.wouldHaveExecutedInShadow,
+}
+```
+
 ## OpenAI Agents SDK
 
 ```ts
@@ -42,6 +54,13 @@ import { createTraceGateFunctionRegistry } from "@tracegate/adapters/plain-funct
 
 const tools = createTraceGateFunctionRegistry(registry, {}, {
   runtimeGateOptions: { mode: "observe" },
+  onSummary(summary) {
+    console.log({
+      toolName: summary.toolName,
+      handlerExecuted: summary.handlerExecuted,
+      sideEffectPrevented: summary.sideEffectPrevented,
+    });
+  },
 });
 ```
 
@@ -73,6 +92,9 @@ import { createTraceGateVercelAITool } from "@tracegate/adapters/vercel-ai-sdk";
 export const tools = {
   lookupCustomer: createTraceGateVercelAITool(contract, execute, {
     runtimeGateOptions: { mode: "shadow" },
+    onSummary(summary) {
+      console.log(summary.wouldHaveExecutedInShadow);
+    },
   }),
 };
 ```

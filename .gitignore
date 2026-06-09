@@ -3,6 +3,7 @@ node_modules/
 dist/
 examples/*/dist/
 examples/*/tsconfig.tsbuildinfo
+examples/side-effect-readiness/traces/*.jsonl
 templates/agent-stacks/*/dist/
 templates/agent-stacks/*/tsconfig.tsbuildinfo
 templates/agent-stacks/*/traces/runtime.jsonl

@@ -194,7 +194,7 @@ async function runDoctor(args: string[], io: CliIo): Promise<number> {
   checks.push(checkProjectPackageResolution(io.cwd, "@tracegate/cli/config"));
   checks.push(checkOptionalAdapterResolution(io.cwd, traceGateImports));
   checks.push(await checkPackageVersionCompatibility(io.cwd));
-  checks.push(await checkTypeScriptModuleResolution(io.cwd, configSource));
+  checks.push(await checkTypeScriptModuleResolution(io.cwd, traceGateImports));
   checks.push(checkTraceGateImportsResolve(io.cwd, traceGateImports));
   checks.push(checkSchemaCompatibility(io.cwd));
 
@@ -280,7 +280,7 @@ async function checkPackageVersionCompatibility(cwd: string): Promise<DoctorChec
 
 async function checkTypeScriptModuleResolution(
   cwd: string,
-  configSource: string,
+  traceGateImports: string[],
 ): Promise<DoctorCheck> {
   const tsconfigPath = await findNearestFile(cwd, "tsconfig.json");
   if (!tsconfigPath) {
@@ -295,14 +295,21 @@ async function checkTypeScriptModuleResolution(
       compilerOptions?: { moduleResolution?: string };
     };
     const moduleResolution = tsconfig.compilerOptions?.moduleResolution?.toLowerCase();
-    if (
-      moduleResolution === "node" &&
-      /from\s+["']@tracegate\/|import\s*\(\s*["']@tracegate\//.test(configSource)
-    ) {
+    const esmTraceGateImports = traceGateImports.filter(
+      (specifier) => specifier !== "@tracegate/core/cjs",
+    );
+    const usesCjsLoader = traceGateImports.includes("@tracegate/core/cjs");
+    if (moduleResolution === "node" && esmTraceGateImports.length > 0) {
       return {
         severity: "WARN",
+        message: `tsconfig uses moduleResolution "node" with ESM TraceGate imports (${esmTraceGateImports.join(", ")}). Prefer "node16", "nodenext", or "bundler"; CommonJS apps should use the documented @tracegate/core/cjs lazy loader.`,
+      };
+    }
+    if (moduleResolution === "node" && usesCjsLoader) {
+      return {
+        severity: "OK",
         message:
-          'tsconfig uses moduleResolution "node" with TraceGate static imports. Prefer "node16", "nodenext", or "bundler"; CommonJS apps can use @tracegate/core/cjs as documented.',
+          'tsconfig uses moduleResolution "node" with the documented @tracegate/core/cjs lazy loader; this CommonJS pattern is supported.',
       };
     }
     return {

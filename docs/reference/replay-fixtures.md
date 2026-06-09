@@ -165,6 +165,23 @@ Runtime-gate fixtures use `traceEventCountMode: "tool-boundary"` and
 where the host may add unrelated tool events, but the approval-denied or runtime-block path must
 still appear in order.
 
+Boundary-only trace:
+
+```json
+{ "sequence": 1, "type": "tool.blocked", "runId": "gate_1", "record": { "id": "tool_1", "runId": "gate_1", "toolName": "saveStrategyDraft", "timestamp": "2026-01-01T00:00:00.000Z", "status": "blocked", "riskTier": "high", "policyVerdict": { "status": "block", "reasons": ["approval denied"], "riskTier": "high", "toolName": "saveStrategyDraft" } } }
+```
+
+Equivalent trace with `traceRunEvents: true`:
+
+```json
+{ "sequence": 1, "type": "run.started", "runId": "run_1", "run": { "id": "run_1", "startedAt": "2026-01-01T00:00:00.000Z", "status": "running", "toolCalls": [], "evidence": [] } }
+{ "sequence": 2, "type": "tool.blocked", "runId": "run_1", "record": { "id": "tool_1", "runId": "run_1", "toolName": "saveStrategyDraft", "timestamp": "2026-01-01T00:00:00.100Z", "status": "blocked", "riskTier": "high", "policyVerdict": { "status": "block", "reasons": ["approval denied"], "riskTier": "high", "toolName": "saveStrategyDraft" } } }
+{ "sequence": 3, "type": "run.finished", "runId": "run_1", "run": { "id": "run_1", "startedAt": "2026-01-01T00:00:00.000Z", "finishedAt": "2026-01-01T00:00:00.200Z", "status": "blocked", "toolCalls": [], "evidence": [] } }
+```
+
+Both traces pass the same runtime fixture when the fixture uses tool-boundary count mode and does
+not explicitly expect `runStatus`.
+
 For a NodeTrader-style approval-denied probe, keep the expected boundary event small:
 
 ```json
@@ -190,6 +207,13 @@ for blocked tool records, including `handlerExecuted=false`, `handlerSkippedReas
 If a fixture explicitly expects `runStatus`, replay still requires a `run.finished` event. Otherwise,
 runtime-gate replay does not depend on run lifecycle events, even when `traceRunEvents: true` was
 enabled during capture.
+
+The official side-effect readiness example contains ready-to-run fixtures for validation block,
+approval denied, policy block, and shadow would-block diagnostics:
+
+```bash
+pnpm --filter tracegate-example-side-effect-readiness check
+```
 
 Refresh fixture expectations from current behavior:
 

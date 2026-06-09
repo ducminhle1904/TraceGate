@@ -45,15 +45,26 @@ runtime outcome. A denied approval is expected to end as `block`, not `review`.
 
 ## Side-Effect Safety Evidence
 
-`RuntimeGateSummary` includes side-effect safety fields for production logging and CI probes:
+`RuntimeGateSummary` is the side-effect evidence contract for production logging and CI probes:
 
-- `handlerExecuted`: whether the host handler ran.
-- `handlerSkippedReason`: why TraceGate skipped the handler, such as `validation-failed`,
-  `policy-blocked`, `review-required`, or `approval-denied`.
-- `sideEffectPrevented`: true when TraceGate enforcement blocked before the handler could perform a
-  side effect.
-- `wouldHaveExecutedInShadow`: in `shadow` mode, whether TraceGate would have allowed execution if
-  enforcement had been enabled.
+| Field | Meaning |
+| --- | --- |
+| `handlerExecuted` | Whether the host handler function ran. |
+| `toolExecuted` | Alias-oriented runtime evidence for whether the wrapped tool call reached the handler. |
+| `handlerSkippedReason` | Why TraceGate skipped the handler: `validation-failed`, `policy-blocked`, `review-required`, or `approval-denied`. |
+| `sideEffectPrevented` | `true` when `enforce` mode blocked before the handler could perform a side effect. |
+| `wouldHaveExecutedInShadow` | In `shadow` mode, whether TraceGate would have allowed execution if enforcement had been enabled. |
+| `enforcementApplied` | Whether the current tool matched the configured enforcement scope. |
+| `validationOnly` | Whether enforcement only blocks invalid input and leaves policy verdicts observational. |
+
+Mode semantics:
+
+- `observe`: handlers execute; summary fields explain what TraceGate observed, but
+  `sideEffectPrevented=false`.
+- `shadow`: handlers execute; `wouldHaveExecutedInShadow=false` is the proof that TraceGate would
+  have blocked or reviewed if enforcement were enabled.
+- `enforce`: matching validation, policy, review, or approval-denied blocks set
+  `handlerExecuted=false` and `sideEffectPrevented=true`.
 
 Use `summarizeSideEffectSafety(summaryOrEvent)` to derive the same compact evidence from a runtime
 summary, tool trace event, or tool call record. This is reporting evidence only; app authorization,

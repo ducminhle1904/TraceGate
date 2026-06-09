@@ -1399,6 +1399,45 @@ export default defineTraceGateConfig({
       const io = createIo(cwd);
       await expect(runCli(["doctor"], io)).resolves.toBe(0);
       expect(io.stdoutText()).toContain('[WARN] tsconfig uses moduleResolution "node"');
+      expect(io.stdoutText()).toContain("ESM TraceGate imports");
+      expect(io.stdoutText()).toContain("@tracegate/cli/config, @tracegate/core");
+      expect(io.stdoutText()).toContain("@tracegate/core/cjs lazy loader");
+    });
+  });
+
+  it("accepts moduleResolution node when using the documented CJS loader", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "tsconfig.json"),
+        JSON.stringify({
+          compilerOptions: {
+            module: "commonjs",
+            moduleResolution: "node",
+          },
+        }),
+        "utf8",
+      );
+      await writeConfig(
+        cwd,
+        `import type { TraceGateCoreModule } from "@tracegate/core/cjs";
+
+const { loadTraceGateCore } = require("@tracegate/core/cjs") as {
+  loadTraceGateCore(): Promise<TraceGateCoreModule>;
+};
+
+export default {
+  matrix: [{ id: "ok", prompt: "Ok", expect: {} }],
+  async runCase() {
+    const core = await loadTraceGateCore();
+    return { events: [${toolEvent("tool.started", "started", "lookupOrder", {})}], output: { loaded: typeof core.defineMatrix === "function" } };
+  },
+};`,
+      );
+
+      const io = createIo(cwd);
+      await expect(runCli(["doctor"], io)).resolves.toBe(0);
+      expect(io.stdoutText()).toContain("documented @tracegate/core/cjs lazy loader");
+      expect(io.stdoutText()).not.toContain("ESM TraceGate imports");
     });
   });
 

@@ -1,0 +1,20 @@
+{
+  "name": "tracegate-example-side-effect-readiness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter @tracegate/core build && tsc -p tsconfig.json",
+    "start": "pnpm build && node dist/index.js",
+    "test:replay": "pnpm --filter @tracegate/cli build && node ../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/validation-block.ts --trace traces/validation-block.jsonl --json && node ../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/validation-block.ts --trace traces/validation-block-run-events.jsonl --json && node ../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/approval-denied.ts --trace traces/approval-denied.jsonl --json && node ../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/approval-denied.ts --trace traces/approval-denied-run-events.jsonl --json && node ../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/policy-block.ts --trace traces/policy-block.jsonl --json && node ../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/policy-block.ts --trace traces/policy-block-run-events.jsonl --json && node ../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/shadow-would-block.ts --trace traces/shadow-would-block.jsonl --json && node ../../packages/cli/dist/bin/tracegate.js replay-runtime fixtures/shadow-would-block.ts --trace traces/shadow-would-block-run-events.jsonl --json",
+    "check": "pnpm start && pnpm test:replay"
+  },
+  "dependencies": {
+    "@tracegate/core": "workspace:*",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@tracegate/cli": "workspace:*",
+    "@types/node": "^24.10.1"
+  }
+}

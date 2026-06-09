@@ -236,6 +236,13 @@ Validation failures, policy blocks, missing review approval, and denied approval
 TraceGate never blocks the host handler; use `wouldHaveExecutedInShadow=false` to see that
 TraceGate would have prevented the side effect if enforcement were enabled.
 
+Run the official side-effect readiness example to see validation block, approval denied, policy
+block, and shadow would-block probes with runtime replay fixtures:
+
+```bash
+pnpm --filter tracegate-example-side-effect-readiness check
+```
+
 ## Production Sinks And Replay Boundaries
 
 Use JSONL sinks for local development and CI artifacts by default. In staging or production,

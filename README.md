@@ -304,6 +304,7 @@ import { createOpenTelemetryTraceSink } from "@tracegate/adapters/opentelemetry"
 | --- | --- | --- |
 | Basic tool policy | Review verdicts, blocked tool calls, matrix assertions | `pnpm --filter tracegate-example-basic-tool-policy test:matrix` |
 | Replay failure | Fixture replay against current behavior | `pnpm --filter tracegate-example-replay-failure test:replay` |
+| Side-effect readiness | Validation block, approval denied, policy block, and shadow would-block runtime replay probes | `pnpm --filter tracegate-example-side-effect-readiness check` |
 | Core workflow | Read-only tool, denied side effect, JSONL trace sink, redaction | `pnpm --filter tracegate-example-core-workflow start` |
 | Manifest adapter | Existing tool manifest conversion and custom risk mapping | `pnpm --filter tracegate-example-manifest-adapter start` |
 | Compatibility static imports | ESM, tsx, CLI config loading, nested workspace package | `pnpm --filter tracegate-example-compatibility-static-imports test:all` |

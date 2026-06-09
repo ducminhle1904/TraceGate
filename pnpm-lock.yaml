@@ -158,6 +158,22 @@ importers:
         specifier: workspace:*
         version: link:../../packages/cli
 
+  examples/side-effect-readiness:
+    dependencies:
+      '@tracegate/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
+    devDependencies:
+      '@tracegate/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.1
+
   packages/adapters:
     dependencies:
       '@langchain/core':
@@ -170,7 +186,7 @@ importers:
         specifier: ^1.9.1
         version: 1.9.1
       '@tracegate/core':
-        specifier: 0.5.2
+        specifier: 0.5.3
         version: link:../core
       zod:
         specifier: ^4.1.13
@@ -201,7 +217,7 @@ importers:
   packages/cli:
     dependencies:
       '@tracegate/core':
-        specifier: 0.5.2
+        specifier: 0.5.3
         version: link:../core
       jiti:
         specifier: ^2.6.1

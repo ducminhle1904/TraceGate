@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.3
+
+- Added a side-effect readiness example with validation-block, approval-denied, policy-block, and shadow would-block runtime replay probes.
+- Clarified `tracegate doctor` module-resolution diagnostics for ESM TraceGate imports versus the documented `@tracegate/core/cjs` CommonJS loader.
+- Expanded docs for runtime summary side-effect evidence fields and runtime replay with boundary and run-lifecycle traces.
+
 ## 0.5.2
 
 - Fixed npm publish metadata so CLI and adapters depend on the real npm `@tracegate/core` version instead of a workspace protocol.
