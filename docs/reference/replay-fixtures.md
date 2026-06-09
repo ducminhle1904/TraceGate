@@ -165,31 +165,62 @@ Runtime-gate fixtures use `traceEventCountMode: "tool-boundary"` and
 where the host may add unrelated tool events, but the approval-denied or runtime-block path must
 still appear in order.
 
+Multi-stage runtime fixtures may also include `stageSequence`:
+
+```json
+{
+  "stageSequence": [
+    {
+      "stage": "pre_call",
+      "toolName": "createInvoiceDraft",
+      "preCallVerdict": "review",
+      "evidenceSatisfied": false,
+      "sideEffectAlreadyOccurred": false,
+      "preventability": "requires_post_call_evidence"
+    },
+    {
+      "stage": "post_call",
+      "toolName": "createInvoiceDraft",
+      "postCallVerdict": "allow",
+      "runtimeVerdict": "allow",
+      "evidenceSatisfied": true,
+      "sideEffectAlreadyOccurred": true,
+      "preventability": "not_preventable_at_pre_call"
+    }
+  ],
+  "stageSequenceMode": "ordered-subset"
+}
+```
+
+Use this for client tools and host-dispatched tools where TraceGate gates pre-call behavior, then
+reconciles evidence after the handler or client action completes. `stageSequenceMode:
+"ordered-subset"` keeps CI stable when production traces add extra tool events.
+
 Boundary-only trace:
 
 ```json
-{ "sequence": 1, "type": "tool.blocked", "runId": "gate_1", "record": { "id": "tool_1", "runId": "gate_1", "toolName": "saveStrategyDraft", "timestamp": "2026-01-01T00:00:00.000Z", "status": "blocked", "riskTier": "high", "policyVerdict": { "status": "block", "reasons": ["approval denied"], "riskTier": "high", "toolName": "saveStrategyDraft" } } }
+{ "sequence": 1, "type": "tool.blocked", "runId": "gate_1", "record": { "id": "tool_1", "runId": "gate_1", "toolName": "createInvoiceDraft", "timestamp": "2026-01-01T00:00:00.000Z", "status": "blocked", "riskTier": "high", "policyVerdict": { "status": "block", "reasons": ["approval denied"], "riskTier": "high", "toolName": "createInvoiceDraft" } } }
 ```
 
 Equivalent trace with `traceRunEvents: true`:
 
 ```json
 { "sequence": 1, "type": "run.started", "runId": "run_1", "run": { "id": "run_1", "startedAt": "2026-01-01T00:00:00.000Z", "status": "running", "toolCalls": [], "evidence": [] } }
-{ "sequence": 2, "type": "tool.blocked", "runId": "run_1", "record": { "id": "tool_1", "runId": "run_1", "toolName": "saveStrategyDraft", "timestamp": "2026-01-01T00:00:00.100Z", "status": "blocked", "riskTier": "high", "policyVerdict": { "status": "block", "reasons": ["approval denied"], "riskTier": "high", "toolName": "saveStrategyDraft" } } }
+{ "sequence": 2, "type": "tool.blocked", "runId": "run_1", "record": { "id": "tool_1", "runId": "run_1", "toolName": "createInvoiceDraft", "timestamp": "2026-01-01T00:00:00.100Z", "status": "blocked", "riskTier": "high", "policyVerdict": { "status": "block", "reasons": ["approval denied"], "riskTier": "high", "toolName": "createInvoiceDraft" } } }
 { "sequence": 3, "type": "run.finished", "runId": "run_1", "run": { "id": "run_1", "startedAt": "2026-01-01T00:00:00.000Z", "finishedAt": "2026-01-01T00:00:00.200Z", "status": "blocked", "toolCalls": [], "evidence": [] } }
 ```
 
 Both traces pass the same runtime fixture when the fixture uses tool-boundary count mode and does
 not explicitly expect `runStatus`.
 
-For a NodeTrader-style approval-denied probe, keep the expected boundary event small:
+For an application approval-denied probe, keep the expected boundary event small:
 
 ```json
 {
   "toolEventSequence": [
     {
       "type": "tool.blocked",
-      "toolName": "sendOrder",
+      "toolName": "createInvoiceDraft",
       "status": "blocked",
       "policyVerdict": "block"
     }

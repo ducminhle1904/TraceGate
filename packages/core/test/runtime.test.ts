@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import {
   comparePolicyVerdicts,
+  createEvidenceRecord,
   createHarness,
   createJsonlFileTraceSink,
   createMemoryTraceSink,
@@ -42,6 +43,38 @@ describe("runtime gate helper", () => {
     const lookup = gate.wrapTool(lookupOrderContract, async (input) => ({ id: input.orderId }));
 
     await expect(lookup({ orderId: "" })).resolves.toEqual({ id: "" });
+    expect(traceSink.events).toEqual([]);
+    expect(summaries).toBe(0);
+  });
+
+  it("keeps client preflight disabled when mode is off", async () => {
+    const traceSink = createMemoryTraceSink();
+    let summaries = 0;
+    const gate = createRuntimeGate({
+      mode: "off",
+      traceSink,
+      onSummary: () => {
+        summaries += 1;
+      },
+    });
+
+    const preflight = await gate.preflightToolCall(lookupOrderContract, { orderId: "" });
+    const reconciled = await gate.reconcileToolCall(preflight, {
+      output: { id: "" },
+      sideEffectAlreadyOccurred: true,
+    });
+
+    expect(preflight).toMatchObject({
+      decision: "allow",
+      inputValid: true,
+      enforceablePreCall: false,
+    });
+    expect(reconciled).toMatchObject({
+      status: "executed",
+      handlerExecuted: true,
+      toolExecuted: true,
+      traceEventCount: 0,
+    });
     expect(traceSink.events).toEqual([]);
     expect(summaries).toBe(0);
   });
@@ -197,6 +230,43 @@ describe("runtime gate helper", () => {
         traceEventCount: 0,
       },
     ]);
+  });
+
+  it("bypasses client preflight validation and tracing for tools outside the allowlist", async () => {
+    const traceSink = createMemoryTraceSink();
+    const summaries: RuntimeGateSummary[] = [];
+    const gate = createRuntimeGate({
+      mode: "enforce",
+      allowlist: ["otherTool"],
+      traceSink,
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+
+    const preflight = await gate.preflightToolCall(lookupOrderContract, { orderId: "" });
+    const reconciled = await gate.reconcileToolCall(preflight, {
+      sideEffectAlreadyOccurred: true,
+    });
+
+    expect(preflight).toMatchObject({
+      decision: "allow",
+      inputValid: true,
+      enforceablePreCall: false,
+    });
+    expect(reconciled).toMatchObject({
+      status: "executed",
+      handlerExecuted: true,
+      toolExecuted: true,
+      traceEventCount: 0,
+    });
+    expect(traceSink.events).toEqual([]);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      status: "executed",
+      enforcementApplied: false,
+      traceEventCount: 0,
+    });
   });
 
   it("enforces validation before host execution and can adapt errors", async () => {
@@ -1250,6 +1320,186 @@ describe("createHarness runtime", () => {
         },
       },
     });
+  });
+
+  it("preflights invalid client tool input before host execution", async () => {
+    const traceSink = createMemoryTraceSink();
+    const summaries: RuntimeGateSummary[] = [];
+    const gate = createRuntimeGate({
+      mode: "enforce",
+      enforcement: { validationOnly: true, toolNames: ["lookupOrder"] },
+      traceSink,
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+
+    const preflight = await gate.preflightToolCall(lookupOrderContract, { orderId: "" });
+
+    expect(preflight).toMatchObject({
+      decision: "block",
+      inputValid: false,
+      enforceablePreCall: true,
+      sideEffectAlreadyOccurred: false,
+      preventability: "prevented",
+    });
+    expect(traceSink.events.map((event) => event.type)).toEqual(["tool.pre_call"]);
+    expect(summaries[0]).toMatchObject({
+      handlerExecuted: false,
+      toolExecuted: false,
+      handlerSkippedReason: "validation-failed",
+      sideEffectPrevented: true,
+      enforceablePreCall: true,
+      preventability: "prevented",
+    });
+    await expect(gate.reconcileToolCall(preflight.id)).rejects.toThrow(
+      /No runtime gate preflight is active/,
+    );
+  });
+
+  it("reconciles post-call evidence without pretending client side effects were prevented", async () => {
+    const traceSink = createMemoryTraceSink();
+    const summaries: RuntimeGateSummary[] = [];
+    const contract = defineToolContract({
+      name: "createInvoiceDraft",
+      riskTier: "medium",
+      inputSchema: z.object({ invoiceId: z.string().min(1) }),
+      sideEffectClass: "persisted_write",
+      requiredEvidence: ["invoice_snapshot"],
+    });
+    const gate = createRuntimeGate({
+      mode: "observe",
+      traceSink,
+      policyEvaluator: createPolicyEvaluator({}),
+      onSummary: (summary) => {
+        summaries.push(summary);
+      },
+    });
+
+    const preflight = await gate.preflightToolCall(contract, { invoiceId: "inv-1" });
+    const evidence = createEvidenceRecord({
+      id: "invoice_snapshot:inv-1",
+      type: "tool-output",
+      source: "host",
+      content: { kind: "invoice_snapshot", invoiceId: "inv-1" },
+    });
+    const reconciled = await gate.reconcileToolCall(preflight, {
+      output: { saved: true },
+      evidence: [evidence],
+      runtimeVerdict: "allow",
+      sideEffectAlreadyOccurred: true,
+    });
+
+    expect(preflight).toMatchObject({
+      decision: "review",
+      evidenceSatisfied: false,
+      preventability: "requires_post_call_evidence",
+    });
+    expect(reconciled).toMatchObject({
+      preCallVerdict: { status: "review" },
+      postCallVerdict: { status: "allow" },
+      runtimeVerdict: "allow",
+      evidenceSatisfied: true,
+      sideEffectAlreadyOccurred: true,
+      sideEffectPrevented: false,
+      preventability: "not_preventable_at_pre_call",
+    });
+    expect(traceSink.events.map((event) => event.type)).toEqual([
+      "tool.pre_call",
+      "evidence.recorded",
+      "tool.post_call",
+      "tool.reconciled",
+    ]);
+    expect(summaries.at(-1)).toMatchObject({
+      handlerExecuted: true,
+      toolExecuted: true,
+      sideEffectPrevented: false,
+    });
+  });
+
+  it("does not infer client side-effect occurrence from output alone", async () => {
+    const gate = createRuntimeGate({
+      mode: "observe",
+      policyEvaluator: createPolicyEvaluator({}),
+    });
+
+    const preflight = await gate.preflightToolCall(lookupOrderContract, { orderId: "ord-1" });
+    const reconciled = await gate.reconcileToolCall(preflight, {
+      output: { dryRun: true },
+    });
+
+    expect(reconciled).toMatchObject({
+      status: "skipped",
+      handlerExecuted: false,
+      toolExecuted: false,
+      sideEffectAlreadyOccurred: false,
+      runtimeVerdict: "review",
+    });
+  });
+
+  it("classifies portable shadow mismatches for evidence and approval gaps", () => {
+    const evidenceReview = comparePolicyVerdicts({
+      contract: lookupOrderContract,
+      runtimeVerdict: {
+        status: "allow",
+        reasons: ["runtime allowed"],
+        riskTier: "read",
+        toolName: "lookupOrder",
+      },
+      traceGateVerdict: {
+        status: "review",
+        reasons: ["Missing required evidence"],
+        riskTier: "read",
+        toolName: "lookupOrder",
+        diagnostics: [
+          {
+            source: "policy",
+            rule: "missing-required-evidence",
+            message: "Missing invoice_snapshot evidence.",
+            riskTier: "read",
+          },
+        ],
+      },
+    });
+    const approvalReview = comparePolicyVerdicts({
+      contract: lookupOrderContract,
+      runtimeVerdict: {
+        status: "allow",
+        reasons: ["runtime allowed"],
+        riskTier: "read",
+        toolName: "lookupOrder",
+      },
+      traceGateVerdict: {
+        status: "review",
+        reasons: ["Approval is missing"],
+        riskTier: "read",
+        toolName: "lookupOrder",
+        diagnostics: [
+          {
+            source: "policy",
+            rule: "risk-tier-requires-approval",
+            message: "Approval required.",
+            riskTier: "read",
+            approval: "missing",
+          },
+        ],
+      },
+    });
+
+    expect(evidenceReview.classifications).toEqual(
+      expect.arrayContaining([
+        "runtime_allow_tracegate_review",
+        "runtime_allow_tracegate_requires_evidence",
+      ]),
+    );
+    expect(evidenceReview.gapCategory).toBe("evidence_gap");
+    expect(approvalReview.classifications).toEqual(
+      expect.arrayContaining([
+        "runtime_allow_tracegate_review",
+        "runtime_allow_tracegate_requires_approval",
+      ]),
+    );
+    expect(approvalReview.gapCategory).toBe("approval_gap");
   });
 
   it("records a policy snapshot before tool input is mutated by execution", async () => {

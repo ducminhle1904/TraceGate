@@ -65,14 +65,14 @@ defineToolContractFromManifest(descriptor, {
 });
 ```
 
-NodeTrader-style registry with separate Zod schemas:
+Application registry with separate Zod schemas:
 
 ```ts
 import { createManifestContractAdapter } from "@tracegate/core";
 
 const schemas = {
-  readPosition: ReadPositionInput,
-  placeOrder: PlaceOrderInput,
+  readCustomer: ReadCustomerInput,
+  createInvoiceDraft: CreateInvoiceDraftInput,
 };
 
 const adapter = createManifestContractAdapter({
@@ -98,7 +98,7 @@ const adapter = createManifestContractAdapter({
   }),
 });
 
-const placeOrderContract = adapter.getContract("placeOrder");
+const invoiceDraftContract = adapter.getContract("createInvoiceDraft");
 ```
 
 TraceGate records and tests policy expectations around these contracts. It does not replace

@@ -15,13 +15,13 @@ export default defineReplayFixture({
     toolEventSequence: [
       {
         type: "tool.started",
-        toolName: "saveStrategyDraft",
+        toolName: "createInvoiceDraft",
         status: "started",
         policyVerdict: "block",
       },
       {
         type: "tool.succeeded",
-        toolName: "saveStrategyDraft",
+        toolName: "createInvoiceDraft",
         status: "succeeded",
         policyVerdict: "block",
       },

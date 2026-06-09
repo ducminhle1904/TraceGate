@@ -27,6 +27,15 @@ Every template prints the same side-effect readiness fields:
   handlerSkippedReason: summary.handlerSkippedReason,
   sideEffectPrevented: summary.sideEffectPrevented,
   wouldHaveExecutedInShadow: summary.wouldHaveExecutedInShadow,
+  preCallVerdict: summary.preCallVerdict?.status,
+  postCallVerdict: summary.postCallVerdict?.status,
+  runtimeVerdict:
+    typeof summary.runtimeVerdict === "string"
+      ? summary.runtimeVerdict
+      : summary.runtimeVerdict?.status,
+  evidenceSatisfied: summary.evidenceSatisfied,
+  sideEffectAlreadyOccurred: summary.sideEffectAlreadyOccurred,
+  preventability: summary.preventability,
 }
 ```
 
@@ -65,6 +74,26 @@ const tools = createTraceGateFunctionRegistry(registry, {}, {
 ```
 
 Use this for existing in-process registries before adopting a framework-specific adapter.
+
+For client tools where the host dispatches the handler later, use the client flow:
+
+```ts
+import { createTraceGateClientFunctionTool } from "@tracegate/adapters/plain-functions";
+
+const tool = createTraceGateClientFunctionTool(contract, {
+  runtimeGateOptions: { mode: "observe", policyEvaluator },
+});
+
+const preflight = await tool.preflight(input);
+const summary = await tool.reconcile(preflight, {
+  output: clientResult,
+  evidence: [invoiceSnapshotEvidence],
+  runtimeVerdict: "allow",
+  sideEffectAlreadyOccurred: true,
+});
+```
+
+This records `tool.pre_call`, `tool.post_call`, and `tool.reconciled` events for runtime replay.
 
 ## LangGraph JS
 

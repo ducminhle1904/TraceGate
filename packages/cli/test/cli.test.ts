@@ -707,13 +707,18 @@ export default {
     await withTempDir(async (cwd) => {
       await writeFile(
         join(cwd, "runtime-gate.jsonl"),
-        `${toolEvent("tool.started", "started", "sendEmail", {}, "review")}\n${toolEvent(
-          "tool.succeeded",
-          "succeeded",
-          "sendEmail",
-          {},
-          "allow",
-        )}\n`,
+        `${toolEvent("tool.pre_call", "blocked", "sendEmail", {}, "review", {
+          stage: "pre_call",
+          evidenceSatisfied: false,
+          sideEffectAlreadyOccurred: false,
+          preventability: "requires_post_call_evidence",
+        })}\n${toolEvent("tool.post_call", "succeeded", "sendEmail", {}, "allow", {
+          stage: "post_call",
+          runtimeVerdict: "allow",
+          evidenceSatisfied: true,
+          sideEffectAlreadyOccurred: true,
+          preventability: "not_preventable_at_pre_call",
+        })}\n`,
         "utf8",
       );
 
@@ -736,7 +741,9 @@ export default {
       expect(fixture).toContain('"sourceKind": "runtime-gate"');
       expect(fixture).toContain('"traceEventCountMode": "tool-boundary"');
       expect(fixture).toContain('"toolEventSequenceMode": "ordered-subset"');
+      expect(fixture).toContain('"stageSequenceMode": "ordered-subset"');
       expect(fixture).toContain('"toolEventSequence"');
+      expect(fixture).toContain('"stageSequence"');
       expect(fixture).toContain('"traceEventCount": 2');
     });
   });
@@ -924,6 +931,79 @@ export default {
           "run.finished",
           "blocked",
         )}\n`,
+        "utf8",
+      );
+
+      const io = createIo(cwd);
+      await expect(
+        runCli(["replay-runtime", "fixture.ts", "--trace", "current.jsonl"], io),
+      ).resolves.toBe(0);
+      expect(io.stdoutText()).toContain("passed");
+    });
+  });
+
+  it("replays runtime-gate multi-stage traces as an ordered subset", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "fixture.ts"),
+        replayFixtureModule({
+          expect: {
+            toolSequence: [],
+            toolStatuses: {},
+            policyVerdicts: {},
+            evidence: [],
+            outputKeys: [],
+            toolEventSequence: [
+              {
+                type: "tool.post_call",
+                toolName: "createInvoiceDraft",
+                status: "succeeded",
+                policyVerdict: "allow",
+              },
+            ],
+            toolEventSequenceMode: "ordered-subset",
+            stageSequence: [
+              {
+                stage: "post_call",
+                toolName: "createInvoiceDraft",
+                postCallVerdict: "allow",
+                runtimeVerdict: "allow",
+                evidenceSatisfied: true,
+                sideEffectAlreadyOccurred: true,
+                preventability: "not_preventable_at_pre_call",
+              },
+            ],
+            stageSequenceMode: "ordered-subset",
+            traceEventCount: 1,
+            traceEventCountMode: "tool-boundary",
+          },
+          captured: {
+            traceEventCount: 1,
+          },
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(cwd, "current.jsonl"),
+        `${runEvent("run.started", "running")}\n${toolEvent(
+          "tool.pre_call",
+          "blocked",
+          "createInvoiceDraft",
+          {},
+          "review",
+          {
+            stage: "pre_call",
+            evidenceSatisfied: false,
+            sideEffectAlreadyOccurred: false,
+            preventability: "requires_post_call_evidence",
+          },
+        )}\n${toolEvent("tool.post_call", "succeeded", "createInvoiceDraft", {}, "allow", {
+          stage: "post_call",
+          runtimeVerdict: "allow",
+          evidenceSatisfied: true,
+          sideEffectAlreadyOccurred: true,
+          preventability: "not_preventable_at_pre_call",
+        })}\n${runEvent("run.finished", "succeeded")}\n`,
         "utf8",
       );
 
@@ -1573,11 +1653,19 @@ function createIo(cwd: string) {
 }
 
 function toolEvent(
-  type: "tool.started" | "tool.succeeded" | "tool.failed" | "tool.blocked",
+  type:
+    | "tool.started"
+    | "tool.succeeded"
+    | "tool.failed"
+    | "tool.blocked"
+    | "tool.pre_call"
+    | "tool.post_call"
+    | "tool.reconciled",
   status: "started" | "succeeded" | "failed" | "blocked",
   toolName: string,
   input: Record<string, unknown>,
   verdict: "allow" | "warn" | "block" | "review" = "allow",
+  metadata?: Record<string, unknown>,
 ): string {
   return JSON.stringify({
     sequence: 1,
@@ -1598,6 +1686,7 @@ function toolEvent(
         riskTier: "read",
         toolName,
       },
+      ...(metadata ? { metadata } : {}),
     },
   });
 }
