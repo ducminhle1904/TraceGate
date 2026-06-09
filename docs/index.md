@@ -10,6 +10,8 @@ known failures in CI.
 - [Tool-call contracts](concepts/tool-call-contracts.md)
 - [Runtime semantics](reference/runtime-semantics.md)
 - [Runtime integration](guides/runtime-integration.md)
+- [Human approval](guides/human-approval.md)
+- [Side-effect rollout playbook](guides/side-effect-rollout-playbook.md)
 - [Matrix file reference](reference/matrix-file.md)
 - [Replay](concepts/replay.md)
 

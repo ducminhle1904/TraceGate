@@ -77,6 +77,31 @@ mapRiskTier("broker_write", {
 });
 ```
 
+### `createRuntimeReplayRecorder(options)` / `createRuntimeReplayFixture(input, options)`
+
+Creates sanitized runtime-gate replay fixtures from captured `TraceEvent` rows and optional
+runtime summaries.
+
+```ts
+const recorder = createRuntimeReplayRecorder();
+
+const gate = createRuntimeGate({
+  mode: "observe",
+  traceSink: recorder.traceSink,
+  onSummary: recorder.onSummary,
+});
+
+const fixture = recorder.toFixture({
+  id: "runtime-side-effect-probe",
+  prompt: "Replay runtime side-effect probe",
+});
+```
+
+Runtime recorder fixtures default to `traceEventCountMode: "tool-boundary"`,
+`toolEventSequenceMode: "ordered-subset"`, and `stageSequenceMode: "ordered-subset"`. Common
+secret keys are redacted before fixture creation, and raw secret-like values fail unless
+`allowSecretFindings` is explicitly enabled.
+
 ### `createManifestContractAdapter(config)`
 
 Builds a named contract lookup from a registry plus a separate Zod schema map. This is useful

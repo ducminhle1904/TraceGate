@@ -32,8 +32,9 @@ Each template contains:
 
 - an existing registry with one read-only tool and one side-effecting tool
 - TraceGate contracts derived from registry metadata and Zod schemas
+- observe, shadow, validation-only enforce, and selected side-effect enforce rollout examples
 - runtime summaries with `mode`, `toolName`, `riskTier`, `finalVerdict`,
-  `handlerExecuted`, `sideEffectPrevented`, and shadow classifications
+  `handlerExecuted`, `sideEffectPrevented`, `enforcementEligible`, and shadow classifications
 - a generated `traces/runtime.jsonl`
 - a checked-in runtime replay fixture using `traceEventCountMode: "tool-boundary"` and
   `toolEventSequenceMode: "ordered-subset"`
@@ -42,6 +43,12 @@ The replay command is the same shape in each template:
 
 ```bash
 tracegate replay-runtime fixtures/runtime.ts --trace traces/runtime.jsonl
+```
+
+To turn a freshly captured runtime trace into a sanitized fixture:
+
+```bash
+tracegate runtime record --trace traces/runtime.jsonl --out fixtures/runtime.ts --force
 ```
 
 Use these templates as starting points for CI probes. Keep real authorization and business

@@ -26,6 +26,8 @@ Every template prints the same side-effect readiness fields:
   toolExecuted: summary.toolExecuted,
   handlerSkippedReason: summary.handlerSkippedReason,
   sideEffectPrevented: summary.sideEffectPrevented,
+  enforcementEligible: summary.enforcementEligible,
+  enforcementEligibilityReason: summary.enforcementEligibilityReason,
   wouldHaveExecutedInShadow: summary.wouldHaveExecutedInShadow,
   preCallVerdict: summary.preCallVerdict?.status,
   postCallVerdict: summary.postCallVerdict?.status,
@@ -94,6 +96,28 @@ const summary = await tool.reconcile(preflight, {
 ```
 
 This records `tool.pre_call`, `tool.post_call`, and `tool.reconciled` events for runtime replay.
+
+## Custom Agent Runtime
+
+For custom dispatchers, wrap the boundary where the runtime is about to call a project-owned tool:
+
+```ts
+import { createRuntimeGate, createRuntimeReplayRecorder } from "@tracegate/core";
+
+const recorder = createRuntimeReplayRecorder();
+const gate = createRuntimeGate({
+  mode: "shadow",
+  traceSink: recorder.traceSink,
+  onSummary: recorder.onSummary,
+  runtimeVerdictEvaluator: hostPolicyEvaluator,
+});
+
+const guarded = gate.wrapTool(contract, existingToolHandler);
+const result = await guarded(input);
+const fixture = recorder.toFixture({ id: "custom-runtime-probe" });
+```
+
+Persist the fixture in CI, then compare new runtime traces with `tracegate replay-runtime`.
 
 ## LangGraph JS
 

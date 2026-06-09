@@ -137,6 +137,20 @@ Create a runtime-gate fixture from boundary events:
 tracegate fixtures create traces/runtime-gate.jsonl --runtime-gate --out fixtures/runtime-gate.ts
 ```
 
+Record a sanitized runtime replay fixture with the first-class recorder path:
+
+```bash
+tracegate runtime record \
+  --trace traces/runtime-gate.jsonl \
+  --summary traces/runtime-summaries.jsonl \
+  --out fixtures/runtime-gate.ts \
+  --case-id runtime-gate
+```
+
+`runtime record` uses the same runtime-gate defaults as `fixtures create --runtime-gate`, redacts
+common secret keys before writing the fixture, and fails on raw secret-like values unless
+`--allow-secret-findings` is passed.
+
 Create a fixture using an existing matrix case from `tracegate.config.ts`:
 
 ```bash

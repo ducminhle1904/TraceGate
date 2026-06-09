@@ -748,6 +748,107 @@ export default {
     });
   });
 
+  it("records sanitized runtime replay fixtures through the runtime command", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "runtime.jsonl"),
+        `${toolEvent("tool.started", "started", "sendEmail", {
+          apiKey: "runtime-secret-value",
+        })}\n`,
+        "utf8",
+      );
+      await writeFile(
+        join(cwd, "summary.jsonl"),
+        `${JSON.stringify({ toolName: "sendEmail", token: "runtime-secret-value" })}\n`,
+        "utf8",
+      );
+
+      const io = createIo(cwd);
+      await expect(
+        runCli(
+          [
+            "runtime",
+            "record",
+            "--trace",
+            "runtime.jsonl",
+            "--summary",
+            "summary.jsonl",
+            "--out",
+            "fixtures/runtime.ts",
+            "--case-id",
+            "runtime-record",
+            "--prompt",
+            "Replay recorded runtime trace",
+          ],
+          io,
+        ),
+      ).resolves.toBe(0);
+
+      const fixture = await readFile(join(cwd, "fixtures/runtime.ts"), "utf8");
+      expect(fixture).toContain("defineReplayFixture");
+      expect(fixture).toContain('"id": "runtime-record"');
+      expect(fixture).toContain('"summarySource": "summary.jsonl"');
+      expect(fixture).toContain('"summaryCount": 1');
+      expect(fixture).toContain('"traceEventCountMode": "tool-boundary"');
+      expect(fixture).not.toContain("runtime-secret-value");
+
+      const replay = createIo(cwd);
+      await expect(
+        runCli(
+          ["replay-runtime", "fixtures/runtime.ts", "--trace", "runtime.jsonl", "--json"],
+          replay,
+        ),
+      ).resolves.toBe(0);
+      expect(JSON.parse(replay.stdoutText())).toMatchObject({
+        status: "passed",
+        cases: [{ id: "runtime-record", status: "passed" }],
+      });
+
+      const overwrite = createIo(cwd);
+      await expect(
+        runCli(
+          ["runtime", "record", "--trace", "runtime.jsonl", "--out", "fixtures/runtime.ts"],
+          overwrite,
+        ),
+      ).resolves.toBe(1);
+      expect(overwrite.stderrText()).toContain("Runtime replay fixture already exists");
+    });
+  });
+
+  it("fails runtime recording on raw secret-like values unless explicitly allowed", async () => {
+    await withTempDir(async (cwd) => {
+      await writeFile(
+        join(cwd, "runtime.jsonl"),
+        `${toolEvent("tool.started", "started", "sendEmail", {
+          note: "Bearer abcdefghijklmnopqrstuvwxyz123456",
+        })}\n`,
+        "utf8",
+      );
+
+      const blocked = createIo(cwd);
+      await expect(
+        runCli(["runtime", "record", "--trace", "runtime.jsonl", "--out", "blocked.ts"], blocked),
+      ).resolves.toBe(1);
+      expect(blocked.stderrText()).toContain("Secret-like values detected");
+
+      const allowed = createIo(cwd);
+      await expect(
+        runCli(
+          [
+            "runtime",
+            "record",
+            "--trace",
+            "runtime.jsonl",
+            "--out",
+            "allowed.ts",
+            "--allow-secret-findings",
+          ],
+          allowed,
+        ),
+      ).resolves.toBe(0);
+    });
+  });
+
   it("omits runStatus when creating runtime-gate fixtures from traces with run events", async () => {
     await withTempDir(async (cwd) => {
       await writeFile(

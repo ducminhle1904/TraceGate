@@ -9,6 +9,8 @@ Use `createRuntimeGate()` when you need to observe, shadow, or enforce TraceGate
 an existing production tool dispatcher before migrating to a full harness integration.
 For client or host-dispatched tools, use `preflightToolCall()` before the host handler and
 `reconcileToolCall()` after output/evidence is available.
+Use `createRuntimeReplayRecorder()` to capture sanitized runtime-gate events and summaries that
+can become `tracegate replay-runtime` fixtures.
 
 ## Install
 
@@ -61,6 +63,7 @@ imports from `@tracegate/core`.
 - harness runtime and trace sinks
 - runtime gate rollout helpers
 - multi-stage pre-call and post-call evidence reconciliation
+- runtime replay recording helpers
 - policy and approval helpers
 - structured policy diagnostics
 - redaction and placeholder-aware secret-leak detection

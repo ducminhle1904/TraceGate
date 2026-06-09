@@ -100,6 +100,9 @@ describe("runtime gate helper", () => {
         validationFailed: true,
         handlerExecuted: true,
         toolExecuted: true,
+        enforcementEligible: false,
+        enforcementEligibilityReason: "mode-observe",
+        enforcementScopeMatched: true,
         enforcementApplied: false,
         validationOnly: false,
       },
@@ -125,6 +128,9 @@ describe("runtime gate helper", () => {
       status: "executed",
       handlerExecuted: true,
       toolExecuted: true,
+      enforcementEligible: false,
+      enforcementEligibilityReason: "mode-observe",
+      enforcementScopeMatched: true,
       enforcementApplied: false,
       validationOnly: false,
       validationFailed: false,
@@ -225,6 +231,9 @@ describe("runtime gate helper", () => {
         status: "skipped",
         handlerExecuted: true,
         toolExecuted: true,
+        enforcementEligible: false,
+        enforcementEligibilityReason: "allowlist-excluded",
+        enforcementScopeMatched: false,
         enforcementApplied: false,
         validationOnly: false,
         traceEventCount: 0,
@@ -264,8 +273,46 @@ describe("runtime gate helper", () => {
     expect(summaries).toHaveLength(1);
     expect(summaries[0]).toMatchObject({
       status: "executed",
+      enforcementEligible: false,
+      enforcementEligibilityReason: "allowlist-excluded",
+      enforcementScopeMatched: false,
       enforcementApplied: false,
       traceEventCount: 0,
+    });
+  });
+
+  it("reports enforcement eligibility reasons for scoped exclusions", async () => {
+    const riskSummaries: RuntimeGateSummary[] = [];
+    const toolSummaries: RuntimeGateSummary[] = [];
+    const riskGate = createRuntimeGate({
+      mode: "enforce",
+      enforcement: { riskTiers: ["high"] },
+      onSummary: (summary) => {
+        riskSummaries.push(summary);
+      },
+    });
+    const toolGate = createRuntimeGate({
+      mode: "enforce",
+      enforcement: { toolNames: ["otherTool"] },
+      onSummary: (summary) => {
+        toolSummaries.push(summary);
+      },
+    });
+
+    await riskGate.wrapTool(lookupOrderContract, async () => ({ ok: true }))({ orderId: "" });
+    await toolGate.wrapTool(lookupOrderContract, async () => ({ ok: true }))({ orderId: "" });
+
+    expect(riskSummaries[0]).toMatchObject({
+      enforcementEligible: false,
+      enforcementEligibilityReason: "risk-tier-excluded",
+      enforcementScopeMatched: false,
+      enforcementApplied: false,
+    });
+    expect(toolSummaries[0]).toMatchObject({
+      enforcementEligible: false,
+      enforcementEligibilityReason: "tool-name-excluded",
+      enforcementScopeMatched: false,
+      enforcementApplied: false,
     });
   });
 
@@ -286,6 +333,8 @@ describe("runtime gate helper", () => {
         toolExecuted: context.summary.toolExecuted,
         handlerSkippedReason: context.summary.handlerSkippedReason,
         sideEffectPrevented: context.summary.sideEffectPrevented,
+        enforcementEligible: context.summary.enforcementEligible,
+        enforcementEligibilityReason: context.summary.enforcementEligibilityReason,
         enforcementApplied: context.summary.enforcementApplied,
         validationOnly: context.summary.validationOnly,
       }),
@@ -307,6 +356,8 @@ describe("runtime gate helper", () => {
       toolExecuted: false,
       handlerSkippedReason: "validation-failed",
       sideEffectPrevented: true,
+      enforcementEligible: true,
+      enforcementEligibilityReason: "eligible-validation-only",
       enforcementApplied: true,
       validationOnly: true,
       diagnostics: [],

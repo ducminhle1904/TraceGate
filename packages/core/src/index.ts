@@ -69,6 +69,16 @@ export {
   ReplayTraceSummarySchema,
   summarizeReplaySource,
 } from "./replay/replay-fixture.js";
+export type {
+  RuntimeReplayFixtureInput,
+  RuntimeReplayFixtureOptions,
+  RuntimeReplayRecorder,
+  RuntimeReplayRecorderOptions,
+} from "./replay/runtime-recorder.js";
+export {
+  createRuntimeReplayFixture,
+  createRuntimeReplayRecorder,
+} from "./replay/runtime-recorder.js";
 export type { TraceGateRuntimeErrorDetails } from "./runtime/errors.js";
 export {
   TraceGateInputValidationError,
@@ -94,6 +104,7 @@ export type {
   PolicyComparisonResult,
   PreCallDecision,
   RuntimeGate,
+  RuntimeGateEnforcementEligibilityReason,
   RuntimeGateEnforcementOptions,
   RuntimeGateErrorContext,
   RuntimeGateMode,

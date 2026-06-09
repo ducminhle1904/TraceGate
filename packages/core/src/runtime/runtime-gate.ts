@@ -58,6 +58,16 @@ export interface RuntimeGateEnforcementOptions {
   toolNames?: string[];
 }
 
+export type RuntimeGateEnforcementEligibilityReason =
+  | "eligible"
+  | "eligible-validation-only"
+  | "mode-off"
+  | "mode-observe"
+  | "mode-shadow"
+  | "allowlist-excluded"
+  | "tool-name-excluded"
+  | "risk-tier-excluded";
+
 export type PolicyComparisonClassification =
   | "match"
   | "runtime_allow_tracegate_block"
@@ -101,6 +111,9 @@ export interface RuntimeGateSummary {
   handlerSkippedReason?: HandlerSkippedReason | undefined;
   sideEffectPrevented: boolean;
   wouldHaveExecutedInShadow?: boolean | undefined;
+  enforcementEligible: boolean;
+  enforcementEligibilityReason: RuntimeGateEnforcementEligibilityReason;
+  enforcementScopeMatched: boolean;
   enforcementApplied?: boolean | undefined;
   validationOnly?: boolean | undefined;
   validationFailed: boolean;
@@ -1018,12 +1031,15 @@ function createSummaryBase(
   | "riskTier"
   | "context"
   | "contractMetadata"
+  | "enforcementEligible"
+  | "enforcementEligibilityReason"
+  | "enforcementScopeMatched"
   | "enforcementApplied"
   | "validationOnly"
 > {
   const context = normalizeContext(options);
   const contractMetadata = normalizeJsonObject(contract.metadata, options.redaction);
-  const enforcementApplied = isEnforcementApplied(options, contract);
+  const eligibility = getEnforcementEligibility(options, contract);
 
   return {
     runId,
@@ -1032,8 +1048,11 @@ function createSummaryBase(
     riskTier: contract.riskTier,
     ...(context ? { context } : {}),
     ...(contractMetadata && Object.keys(contractMetadata).length > 0 ? { contractMetadata } : {}),
-    enforcementApplied,
-    validationOnly: enforcementApplied && options.enforcement?.validationOnly === true,
+    enforcementEligible: eligibility.enforcementEligible,
+    enforcementEligibilityReason: eligibility.enforcementEligibilityReason,
+    enforcementScopeMatched: eligibility.enforcementScopeMatched,
+    enforcementApplied: eligibility.enforcementEligible,
+    validationOnly: eligibility.enforcementEligible && options.enforcement?.validationOnly === true,
   };
 }
 
@@ -1133,23 +1152,92 @@ function adaptOrThrow(
 }
 
 function shouldEnforce(contract: ToolContract, enforcement: RuntimeGateEnforcementOptions = {}) {
-  const riskTierMatches =
-    enforcement.riskTiers === undefined || enforcement.riskTiers.includes(contract.riskTier);
-  const toolNameMatches =
-    enforcement.toolNames === undefined || enforcement.toolNames.includes(contract.name);
-  return riskTierMatches && toolNameMatches;
+  return getEnforcementScopeMatch(contract, enforcement).enforcementMatches;
 }
 
 function isToolAllowed(contract: ToolContract, allowlist: readonly string[] | undefined): boolean {
   return allowlist === undefined || allowlist.includes(contract.name);
 }
 
-function isEnforcementApplied(options: RuntimeGateOptions, contract: ToolContract): boolean {
-  return (
-    options.mode === "enforce" &&
-    isToolAllowed(contract, options.allowlist) &&
-    shouldEnforce(contract, options.enforcement)
-  );
+function getEnforcementEligibility(
+  options: RuntimeGateOptions,
+  contract: ToolContract,
+): {
+  enforcementEligible: boolean;
+  enforcementEligibilityReason: RuntimeGateEnforcementEligibilityReason;
+  enforcementScopeMatched: boolean;
+} {
+  const allowlistMatches = isToolAllowed(contract, options.allowlist);
+  const scope = getEnforcementScopeMatch(contract, options.enforcement);
+  const enforcementScopeMatched = allowlistMatches && scope.enforcementMatches;
+
+  if (options.mode === "off") {
+    return {
+      enforcementEligible: false,
+      enforcementEligibilityReason: "mode-off",
+      enforcementScopeMatched,
+    };
+  }
+  if (options.mode === "observe") {
+    return {
+      enforcementEligible: false,
+      enforcementEligibilityReason: "mode-observe",
+      enforcementScopeMatched,
+    };
+  }
+  if (options.mode === "shadow") {
+    return {
+      enforcementEligible: false,
+      enforcementEligibilityReason: "mode-shadow",
+      enforcementScopeMatched,
+    };
+  }
+  if (!allowlistMatches) {
+    return {
+      enforcementEligible: false,
+      enforcementEligibilityReason: "allowlist-excluded",
+      enforcementScopeMatched,
+    };
+  }
+  if (!scope.toolNameMatches) {
+    return {
+      enforcementEligible: false,
+      enforcementEligibilityReason: "tool-name-excluded",
+      enforcementScopeMatched,
+    };
+  }
+  if (!scope.riskTierMatches) {
+    return {
+      enforcementEligible: false,
+      enforcementEligibilityReason: "risk-tier-excluded",
+      enforcementScopeMatched,
+    };
+  }
+  return {
+    enforcementEligible: true,
+    enforcementEligibilityReason:
+      options.enforcement?.validationOnly === true ? "eligible-validation-only" : "eligible",
+    enforcementScopeMatched,
+  };
+}
+
+function getEnforcementScopeMatch(
+  contract: ToolContract,
+  enforcement: RuntimeGateEnforcementOptions = {},
+): {
+  riskTierMatches: boolean;
+  toolNameMatches: boolean;
+  enforcementMatches: boolean;
+} {
+  const riskTierMatches =
+    enforcement.riskTiers === undefined || enforcement.riskTiers.includes(contract.riskTier);
+  const toolNameMatches =
+    enforcement.toolNames === undefined || enforcement.toolNames.includes(contract.name);
+  return {
+    riskTierMatches,
+    toolNameMatches,
+    enforcementMatches: riskTierMatches && toolNameMatches,
+  };
 }
 
 function getShadowWouldHaveExecuted(shadowComparison: PolicyComparisonResult): boolean | undefined {

@@ -9,6 +9,8 @@ import {
   createLooseManifestContractAdapter,
   createPolicyEvaluator,
   createReplayExpectation,
+  createRuntimeReplayFixture,
+  createRuntimeReplayRecorder,
   createToolContractAdapter,
   defineMatrix,
   definePolicy,
@@ -824,6 +826,97 @@ describe("replay fixtures", () => {
       outputKeys: ["blocked", "nested", "nested.reason"],
       traceEventCount: 2,
     });
+  });
+
+  it("records sanitized runtime replay fixtures with runtime-gate defaults", () => {
+    const recorder = createRuntimeReplayRecorder();
+    const event = parseTraceJsonl(
+      `${JSON.stringify({
+        ...toolEvent,
+        record: {
+          ...toolEvent.record,
+          input: {
+            apiKey: "runtime-secret-value",
+            note: "safe",
+          },
+        },
+      })}\n`,
+    )[0];
+
+    if (!event) {
+      throw new Error("Expected runtime recorder test event.");
+    }
+
+    recorder.recordEvent(event);
+    recorder.recordSummary(undefined);
+    recorder.recordSummary({
+      mode: "observe",
+      toolName: "sendEmail",
+      riskTier: "high",
+      token: "runtime-secret-value",
+    });
+    const fixture = recorder.toFixture({
+      id: "runtime-recorder",
+      prompt: "Replay sanitized runtime recorder trace",
+    });
+
+    expect(fixture).toMatchObject({
+      id: "runtime-recorder",
+      case: {
+        id: "runtime-recorder",
+        prompt: "Replay sanitized runtime recorder trace",
+      },
+      expect: {
+        traceEventCountMode: "tool-boundary",
+        toolEventSequenceMode: "ordered-subset",
+        stageSequenceMode: "ordered-subset",
+        traceEventCount: 1,
+      },
+      metadata: {
+        sourceKind: "runtime-gate",
+        summaryCount: 2,
+      },
+    });
+    expect(fixture.expect.toolEventSequence?.[0]).toMatchObject({
+      type: "tool.started",
+      toolName: "sendEmail",
+      status: "started",
+      policyVerdict: "review",
+    });
+    expect(JSON.stringify(recorder.events)).not.toContain("runtime-secret-value");
+    expect(JSON.stringify(recorder.events)).toContain("[REDACTED]");
+    expect(JSON.stringify(fixture)).not.toContain("runtime-secret-value");
+  });
+
+  it("creates runtime replay fixtures from existing events and blocks raw secret leakage", () => {
+    const events = parseTraceJsonl(`${JSON.stringify(toolEvent)}\n`);
+    const fixture = createRuntimeReplayFixture(
+      { events },
+      { id: "runtime-one-shot", prompt: "Replay runtime one-shot trace" },
+    );
+
+    expect(compareReplayExpectation(fixture.expect, { events }).failures).toEqual([]);
+    expect(() =>
+      createRuntimeReplayFixture(
+        {
+          events: parseTraceJsonl(
+            `${JSON.stringify({
+              ...toolEvent,
+              record: {
+                ...toolEvent.record,
+                metadata: {
+                  raw: "Bearer abcdefghijklmnopqrstuvwxyz123456",
+                },
+              },
+            })}\n`,
+          ),
+        },
+        {
+          id: "raw-secret",
+          redaction: { detect: false },
+        },
+      ),
+    ).toThrow("Secret-like values detected");
   });
 
   it("rejects malformed JSONL rows with line context", () => {

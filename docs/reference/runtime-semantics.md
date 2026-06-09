@@ -54,6 +54,9 @@ runtime outcome. A denied approval is expected to end as `block`, not `review`.
 | `handlerSkippedReason` | Why TraceGate skipped the handler: `validation-failed`, `policy-blocked`, `review-required`, or `approval-denied`. |
 | `sideEffectPrevented` | `true` when `enforce` mode blocked before the handler could perform a side effect. |
 | `wouldHaveExecutedInShadow` | In `shadow` mode, whether TraceGate would have allowed execution if enforcement had been enabled. |
+| `enforcementEligible` | Whether this tool can be blocked by the current mode and enforcement scope. |
+| `enforcementEligibilityReason` | Why enforcement is or is not eligible: `eligible`, `eligible-validation-only`, `mode-off`, `mode-observe`, `mode-shadow`, `allowlist-excluded`, `tool-name-excluded`, or `risk-tier-excluded`. |
+| `enforcementScopeMatched` | Whether allowlist, tool-name scope, and risk-tier scope all matched. |
 | `enforcementApplied` | Whether the current tool matched the configured enforcement scope. |
 | `validationOnly` | Whether enforcement only blocks invalid input and leaves policy verdicts observational. |
 | `preCallVerdict` | The policy verdict before a host or client handler runs. |

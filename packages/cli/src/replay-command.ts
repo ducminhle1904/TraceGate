@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import {
   compareReplayExpectation,
   createReplayExpectation,
+  createRuntimeReplayFixture,
   defineReplayFixture,
   parseTraceJsonlStream,
   type ReplayFixture,
@@ -90,18 +91,77 @@ export async function runFixturesCommand(args: string[], io: CommandIo): Promise
     },
   });
 
-  try {
-    await mkdir(dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, formatFixtureModule(fixture), {
-      encoding: "utf8",
-      flag: values.force ? "w" : "wx",
-    });
-  } catch (error) {
-    if (isNodeError(error) && error.code === "EEXIST") {
-      write(io.stderr, `Replay fixture already exists: ${outputPath}\n`);
-      return 1;
-    }
-    throw error;
+  const writeResult = await writeNewFixtureModule(outputPath, fixture, {
+    existsMessage: "Replay fixture already exists",
+    force: values.force === true,
+  });
+  if (!writeResult.ok) {
+    write(io.stderr, `${writeResult.message}: ${outputPath}\n`);
+    return 1;
+  }
+
+  write(io.stdout, `Created ${outputPath}\n`);
+  return 0;
+}
+
+export async function runRuntimeCommand(args: string[], io: CommandIo): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand !== "record") {
+    write(
+      io.stderr,
+      'Unknown runtime command. Use "tracegate runtime record --trace <trace.jsonl> --out <fixture.ts>".\n',
+    );
+    return 1;
+  }
+
+  const { values } = parseArgs({
+    args: rest,
+    allowPositionals: false,
+    options: {
+      "allow-secret-findings": { type: "boolean" },
+      "case-id": { type: "string" },
+      force: { type: "boolean" },
+      out: { type: "string" },
+      prompt: { type: "string" },
+      summary: { type: "string" },
+      trace: { type: "string" },
+    },
+  });
+  const tracePath = readRequiredString(values.trace, "--trace");
+  const outPath = readRequiredString(values.out, "--out");
+  const summaryPath = readOptionalString(values.summary, "--summary");
+  const caseId = readOptionalString(values["case-id"], "--case-id");
+  const prompt = readOptionalString(values.prompt, "--prompt");
+  const traceFilePath = resolve(io.cwd, tracePath);
+  const outputPath = resolve(io.cwd, outPath);
+  const events = await parseTraceJsonlStream(createReadStream(traceFilePath));
+  const summaries = summaryPath
+    ? parseJsonlObjects(await readFile(resolve(io.cwd, summaryPath), "utf8"), summaryPath)
+    : undefined;
+  const fixture = createRuntimeReplayFixture(
+    {
+      events,
+      ...(summaries ? { summaries } : {}),
+    },
+    {
+      id: caseId ?? toFixtureId(traceFilePath),
+      ...(caseId ? { caseId } : {}),
+      prompt: prompt ?? `Replay runtime trace ${basename(traceFilePath)}`,
+      allowSecretFindings: values["allow-secret-findings"] === true,
+      metadata: {
+        source: tracePath,
+        ...(summaryPath ? { summarySource: summaryPath } : {}),
+      },
+    },
+  );
+
+  const writeResult = await writeNewFixtureModule(outputPath, fixture, {
+    existsMessage: "Runtime replay fixture already exists",
+    force: values.force === true,
+  });
+  if (!writeResult.ok) {
+    write(io.stderr, `${writeResult.message}: ${outputPath}\n`);
+    return 1;
   }
 
   write(io.stdout, `Created ${outputPath}\n`);
@@ -326,6 +386,26 @@ export default defineReplayFixture(${JSON.stringify(fixture, null, 2)});
 `;
 }
 
+async function writeNewFixtureModule(
+  outputPath: string,
+  fixture: ReplayFixture,
+  options: { existsMessage: string; force: boolean },
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, formatFixtureModule(fixture), {
+      encoding: "utf8",
+      flag: options.force ? "w" : "wx",
+    });
+    return { ok: true };
+  } catch (error) {
+    if (isNodeError(error) && error.code === "EEXIST") {
+      return { ok: false, message: options.existsMessage };
+    }
+    throw error;
+  }
+}
+
 async function writeFixtureAtomically(
   filePath: string,
   content: string,
@@ -405,6 +485,25 @@ function readOptionalString(value: string | undefined, name: string): string | u
   }
 
   return value;
+}
+
+function parseJsonlObjects(input: string, label: string): unknown[] {
+  const rows: unknown[] = [];
+  const lines = input.split(/\r?\n/);
+
+  for (const [index, line] of lines.entries()) {
+    if (line.trim().length === 0) {
+      continue;
+    }
+    try {
+      rows.push(JSON.parse(line));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Invalid JSONL summary row in ${label} at line ${index + 1}: ${message}`);
+    }
+  }
+
+  return rows;
 }
 
 function write(stream: Pick<NodeJS.WritableStream, "write">, value: string): void {

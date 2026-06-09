@@ -186,7 +186,7 @@ importers:
         specifier: ^1.9.1
         version: 1.9.1
       '@tracegate/core':
-        specifier: 0.6.0
+        specifier: 0.7.0
         version: link:../core
       zod:
         specifier: ^4.1.13
@@ -217,7 +217,7 @@ importers:
   packages/cli:
     dependencies:
       '@tracegate/core':
-        specifier: 0.6.0
+        specifier: 0.7.0
         version: link:../core
       jiti:
         specifier: ^2.6.1

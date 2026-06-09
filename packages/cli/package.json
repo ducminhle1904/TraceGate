@@ -1,6 +1,6 @@
 {
   "name": "@tracegate/cli",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Command line interface for running TraceGate matrix tests.",
   "type": "module",
   "license": "MIT",
@@ -51,7 +51,7 @@
     "test": "pnpm --filter @tracegate/core build && vitest run"
   },
   "dependencies": {
-    "@tracegate/core": "0.6.0",
+    "@tracegate/core": "0.7.0",
     "jiti": "^2.6.1"
   },
   "devDependencies": {

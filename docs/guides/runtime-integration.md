@@ -285,6 +285,15 @@ Create a fixture from a runtime-gate trace:
 tracegate fixtures create traces/runtime-gate.jsonl --runtime-gate --out fixtures/runtime-gate.ts
 ```
 
+Or use the runtime recorder command when you also capture runtime summaries:
+
+```bash
+tracegate runtime record \
+  --trace traces/runtime-gate.jsonl \
+  --summary traces/runtime-summaries.jsonl \
+  --out fixtures/runtime-gate.ts
+```
+
 Replay a new runtime-gate trace against that fixture without loading `tracegate.config.ts`:
 
 ```bash

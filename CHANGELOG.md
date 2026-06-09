@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0
+
+- Added `createRuntimeReplayRecorder()` and `createRuntimeReplayFixture()` for sanitized runtime-gate replay fixture creation.
+- Added `tracegate runtime record --trace <trace.jsonl> --out <fixture.ts>` for turning production/runtime JSONL probes into replay fixtures.
+- Added enforcement eligibility fields to runtime summaries: `enforcementEligible`, `enforcementEligibilityReason`, and `enforcementScopeMatched`.
+- Expanded production observability docs for structured loggers, Datadog-style logs, OpenTelemetry, Langfuse, and custom event writers.
+- Added human approval UX and side-effect rollout playbook docs for production adoption.
+
 ## 0.6.0
 
 - Added multi-stage runtime gate APIs for client/host-dispatched tools: `preflightToolCall()` and `reconcileToolCall()`.

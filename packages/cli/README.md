@@ -20,6 +20,7 @@ tracegate test --json
 tracegate test --junit tracegate-junit.xml
 tracegate fixtures create trace.jsonl --out fixtures/example.ts
 tracegate fixtures create runtime-gate.jsonl --runtime-gate --out fixtures/runtime-gate.ts
+tracegate runtime record --trace runtime-gate.jsonl --summary summaries.jsonl --out fixtures/runtime-gate.ts
 tracegate replay fixtures/example.ts
 tracegate replay fixtures/example.ts --json
 tracegate replay fixtures/example.ts --junit replay-junit.xml

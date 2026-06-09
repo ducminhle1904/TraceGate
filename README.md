@@ -190,6 +190,15 @@ without requiring a `tracegate.config.ts` runner. Runtime fixtures use tool-boun
 ordered-subset tool event matching so approval-denied or runtime-block probes do not depend on
 full-run event counts.
 
+To create a sanitized runtime fixture from a captured trace and summary stream:
+
+```bash
+tracegate runtime record \
+  --trace traces/runtime-gate.jsonl \
+  --summary traces/runtime-summaries.jsonl \
+  --out fixtures/runtime-gate.ts
+```
+
 ## Matrix Testing
 
 Matrix cases describe expected behavior around tool calls, policy verdicts, evidence, output
@@ -354,6 +363,8 @@ guardrails, observability dashboards, runtime sandboxing, or human review for hi
 - [Policy cookbook](docs/guides/policy-cookbook.md)
 - [Redaction guide](docs/guides/redaction.md)
 - [Runtime integration guide](docs/guides/runtime-integration.md)
+- [Human approval guide](docs/guides/human-approval.md)
+- [Side-effect rollout playbook](docs/guides/side-effect-rollout-playbook.md)
 - [Core contracts reference](docs/reference/core-contracts.md)
 - [Matrix file reference](docs/reference/matrix-file.md)
 - [Trace schema reference](docs/reference/trace-schema.md)
