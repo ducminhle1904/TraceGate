@@ -15,6 +15,8 @@ Fields:
 - `inputSchema`: Zod schema used later to validate tool input.
 - `requiresApproval`: optional boolean, defaults to `false`.
 - `sideEffects`: optional side-effect metadata.
+- `sideEffectClass`: optional side-effect class: `read`, `draft`, `client_mutation`,
+  `persisted_write`, or `external_side_effect`.
 - `requiredEvidence`: optional evidence labels.
 - `metadata`: optional JSON-serializable object.
 
@@ -51,6 +53,7 @@ const fromManifest = createToolContractAdapter({
   inputSchema: (tool) => tool.schema,
   requiredEvidence: (tool) => tool.permissions,
   sideEffects: (tool) => tool.sideEffects,
+  sideEffectClass: (tool) => tool.sideEffectClass,
   metadata: (tool) => ({ internalRisk: tool.internalRisk }),
 });
 
@@ -253,7 +256,9 @@ Returns compact JSON-safe evidence that a side-effecting handler did or did not 
 a runtime gate summary, tool trace event, or tool call record.
 
 Useful fields: `handlerExecuted`, `handlerSkippedReason`, `sideEffectPrevented`,
-`wouldHaveExecutedInShadow`, `toolName`, `riskTier`, `finalVerdict`, and `diagnosticRules`.
+`wouldHaveExecutedInShadow`, `evidenceSatisfied`, `sideEffectAlreadyOccurred`,
+`enforceablePreCall`, `preventability`, `toolName`, `riskTier`, `finalVerdict`, and
+`diagnosticRules`.
 
 ```ts
 const evidence = summarizeSideEffectSafety(toolBlockedEvent);
@@ -285,6 +290,9 @@ Failing example: `{ "metadata": { "bad": undefined } }`.
 Validates tool contract configuration and preserves a runtime Zod `inputSchema`.
 
 Fields: `name`, `riskTier`, `inputSchema`, optional `description`, `requiresApproval`, `sideEffects`, `requiredEvidence`, and JSON `metadata`.
+
+`sideEffectClass` is inferred when omitted: no side effects -> `read`, external side effects ->
+`external_side_effect`, mutating side effects -> `persisted_write`, otherwise `draft`.
 
 Failing example: `{ "name": "1bad", "riskTier": "high" }`.
 

@@ -23,12 +23,14 @@ export {
   mapTraceEventToOpenTelemetryAttributes,
 } from "./opentelemetry.js";
 export type {
+  TraceGateClientFunctionTool,
   TraceGateFunctionRegistryConfig,
   TraceGateFunctionRegistryEntry,
   TraceGateFunctionTool,
   TraceGateFunctionToolOptions,
 } from "./plain-functions.js";
 export {
+  createTraceGateClientFunctionTool,
   createTraceGateFunctionRegistry,
   createTraceGateFunctionTool,
 } from "./plain-functions.js";

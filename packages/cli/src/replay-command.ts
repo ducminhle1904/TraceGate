@@ -66,6 +66,7 @@ export async function runFixturesCommand(args: string[], io: CommandIo): Promise
       ? {
           traceEventCountMode: "tool-boundary",
           toolEventSequenceMode: "ordered-subset",
+          stageSequenceMode: "ordered-subset",
           includeRunStatus: false,
         }
       : {},
@@ -313,6 +314,8 @@ function preserveReplayOutputPolicy(
     optionalOutputKeys: previous.optionalOutputKeys,
     absentOutputKeys: previous.absentOutputKeys,
     outputValues: previous.outputValues,
+    toolEventSequenceMode: previous.toolEventSequenceMode,
+    stageSequenceMode: previous.stageSequenceMode,
   };
 }
 

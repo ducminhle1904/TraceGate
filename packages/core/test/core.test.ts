@@ -1256,6 +1256,148 @@ describe("replay fixtures", () => {
     );
   });
 
+  it("compares multi-stage runtime-gate replay expectations as an ordered subset", () => {
+    const preCall = {
+      ...toolEvent,
+      type: "tool.pre_call",
+      record: {
+        ...toolEvent.record,
+        status: "blocked",
+        metadata: {
+          stage: "pre_call",
+          decision: "review",
+          evidenceSatisfied: false,
+          sideEffectAlreadyOccurred: false,
+          preventability: "requires_post_call_evidence",
+        },
+      },
+    };
+    const postCall = {
+      ...toolEvent,
+      sequence: 3,
+      type: "tool.post_call",
+      record: {
+        ...toolEvent.record,
+        id: "tool-3",
+        status: "succeeded",
+        policyVerdict: {
+          status: "allow",
+          reasons: ["evidence satisfied"],
+          riskTier: "high",
+          toolName: "sendEmail",
+        },
+        metadata: {
+          stage: "post_call",
+          runtimeVerdict: "allow",
+          evidenceSatisfied: true,
+          sideEffectAlreadyOccurred: true,
+          preventability: "not_preventable_at_pre_call",
+        },
+      },
+    };
+    const extra = {
+      ...toolEvent,
+      sequence: 2,
+      type: "tool.started",
+      record: {
+        ...toolEvent.record,
+        id: "tool-2",
+      },
+    };
+    const expected = createReplayExpectation(
+      { events: parseTraceJsonl(`${JSON.stringify(preCall)}\n${JSON.stringify(postCall)}\n`) },
+      {
+        traceEventCountMode: "tool-boundary",
+        toolEventSequenceMode: "ordered-subset",
+        stageSequenceMode: "ordered-subset",
+      },
+    );
+
+    expect(expected.stageSequence).toEqual([
+      {
+        stage: "pre_call",
+        toolName: "sendEmail",
+        preCallVerdict: "review",
+        evidenceSatisfied: false,
+        sideEffectAlreadyOccurred: false,
+        preventability: "requires_post_call_evidence",
+      },
+      {
+        stage: "post_call",
+        toolName: "sendEmail",
+        postCallVerdict: "allow",
+        runtimeVerdict: "allow",
+        evidenceSatisfied: true,
+        sideEffectAlreadyOccurred: true,
+        preventability: "not_preventable_at_pre_call",
+      },
+    ]);
+    expect(
+      compareReplayExpectation(expected, {
+        events: parseTraceJsonl(
+          `${JSON.stringify(extra)}\n${JSON.stringify(preCall)}\n${JSON.stringify(postCall)}\n`,
+        ),
+      }).failures,
+    ).toEqual([]);
+    expect(
+      compareReplayExpectation(expected, {
+        events: parseTraceJsonl(`${JSON.stringify(preCall)}\n`),
+      }).failures,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Expected runtime stage post_call:sendEmail"),
+      ]),
+    );
+  });
+
+  it("allows sparse multi-stage replay expectations to match richer runtime stages", () => {
+    const postCall = {
+      ...toolEvent,
+      type: "tool.post_call",
+      record: {
+        ...toolEvent.record,
+        status: "succeeded",
+        policyVerdict: {
+          status: "allow",
+          reasons: ["evidence satisfied"],
+          riskTier: "high",
+          toolName: "sendEmail",
+        },
+        metadata: {
+          stage: "post_call",
+          runtimeVerdict: "allow",
+          evidenceSatisfied: true,
+          sideEffectAlreadyOccurred: true,
+          preventability: "not_preventable_at_pre_call",
+        },
+      },
+    };
+    const expected = createReplayExpectation(
+      { events: parseTraceJsonl(`${JSON.stringify(postCall)}\n`) },
+      {
+        traceEventCountMode: "tool-boundary",
+        stageSequenceMode: "ordered-subset",
+      },
+    );
+
+    expect(
+      compareReplayExpectation(
+        {
+          ...expected,
+          stageSequence: [
+            {
+              stage: "post_call",
+              toolName: "sendEmail",
+            },
+          ],
+        },
+        {
+          events: parseTraceJsonl(`${JSON.stringify(postCall)}\n`),
+        },
+      ).failures,
+    ).toEqual([]);
+  });
+
   it("reports runtime-gate boundary replay drift clearly", () => {
     const expectedEvents = parseTraceJsonl(`${JSON.stringify(toolEvent)}\n`);
     const actualEvent = {

@@ -42,7 +42,15 @@ export type ReplayToolEventSequenceMode = z.infer<typeof ReplayToolEventSequence
 
 export const ReplayToolEventExpectationSchema = z
   .object({
-    type: z.enum(["tool.started", "tool.succeeded", "tool.failed", "tool.blocked"]),
+    type: z.enum([
+      "tool.started",
+      "tool.succeeded",
+      "tool.failed",
+      "tool.blocked",
+      "tool.pre_call",
+      "tool.post_call",
+      "tool.reconciled",
+    ]),
     toolName: ToolNameSchema,
     status: ToolCallStatusSchema,
     policyVerdict: PolicyVerdictStatusSchema.optional(),
@@ -51,6 +59,33 @@ export const ReplayToolEventExpectationSchema = z
 
 export type ReplayToolEventExpectation = z.infer<typeof ReplayToolEventExpectationSchema>;
 
+export const ReplayStageSequenceModeSchema = z.enum(["exact", "ordered-subset"]);
+
+export type ReplayStageSequenceMode = z.infer<typeof ReplayStageSequenceModeSchema>;
+
+export const ReplayStageExpectationSchema = z
+  .object({
+    stage: z.enum(["pre_call", "post_call", "reconciled"]),
+    toolName: ToolNameSchema,
+    preCallVerdict: PolicyVerdictStatusSchema.optional(),
+    postCallVerdict: PolicyVerdictStatusSchema.optional(),
+    runtimeVerdict: PolicyVerdictStatusSchema.optional(),
+    evidenceSatisfied: z.boolean().optional(),
+    sideEffectAlreadyOccurred: z.boolean().optional(),
+    preventability: z
+      .enum([
+        "prevented",
+        "preventable_pre_call",
+        "not_preventable_at_pre_call",
+        "requires_post_call_evidence",
+        "observational",
+      ])
+      .optional(),
+  })
+  .strict();
+
+export type ReplayStageExpectation = z.infer<typeof ReplayStageExpectationSchema>;
+
 export const ReplayExpectationSchema = z
   .object({
     toolSequence: z.array(ToolNameSchema).default([]),
@@ -58,6 +93,8 @@ export const ReplayExpectationSchema = z
     policyVerdicts: z.record(ToolNameSchema, z.array(PolicyVerdictStatusSchema)).default({}),
     toolEventSequence: z.array(ReplayToolEventExpectationSchema).optional(),
     toolEventSequenceMode: ReplayToolEventSequenceModeSchema.default("exact"),
+    stageSequence: z.array(ReplayStageExpectationSchema).optional(),
+    stageSequenceMode: ReplayStageSequenceModeSchema.default("exact"),
     evidence: z.array(ReplayEvidenceExpectationSchema).default([]),
     runStatus: TraceGateRunStatusSchema.optional(),
     outputKeys: z.array(z.string().min(1)).default([]),
@@ -128,6 +165,7 @@ export interface CreateReplayExpectationOptions {
   outputValues?: Record<string, JsonValue>;
   traceEventCountMode?: ReplayTraceEventCountMode;
   toolEventSequenceMode?: ReplayToolEventSequenceMode;
+  stageSequenceMode?: ReplayStageSequenceMode;
   includeRunStatus?: boolean;
 }
 
@@ -221,6 +259,7 @@ export function createReplayExpectation(
       toolEvents.length > 0
         ? toolEvents.map(toToolEventExpectation)
         : toolRecords.map(toToolRecordEventExpectation),
+    stageSequence: collectStageSequence(toolEvents),
     evidence: evidence.map((record) => ({ id: record.id, type: record.type })),
     ...(includeRunStatus && run?.status ? { runStatus: run.status } : {}),
     outputKeys: collectOutputKeys(source.output),
@@ -250,6 +289,7 @@ export function compareReplayExpectation(
     );
   }
   compareToolEventSequence(expected, actual.toolEventSequence ?? [], failures);
+  compareStageSequence(expected, actual.stageSequence ?? [], failures);
   compareEvidence(expected.evidence, actual.evidence, failures);
   compareOutputKeys(expected, actual.outputKeys, failures);
   compareOutputAssertions(expected, source.output, failures);
@@ -334,6 +374,43 @@ function toToolRecordEventExpectation(record: ToolCallRecord): ReplayToolEventEx
     status: record.status,
     ...(record.policyVerdict?.status ? { policyVerdict: record.policyVerdict.status } : {}),
   });
+}
+
+function collectStageSequence(events: ToolTraceEvent[]): ReplayStageExpectation[] | undefined {
+  const stages = events
+    .map(toStageExpectation)
+    .filter((stage): stage is ReplayStageExpectation => stage !== undefined);
+  return stages.length > 0 ? stages : undefined;
+}
+
+function toStageExpectation(event: ToolTraceEvent): ReplayStageExpectation | undefined {
+  const metadata = event.record.metadata;
+  if (!isRecord(metadata) || typeof metadata.stage !== "string") {
+    return undefined;
+  }
+  const parsed = ReplayStageExpectationSchema.safeParse({
+    stage: metadata.stage,
+    toolName: event.record.toolName,
+    ...(event.type === "tool.pre_call" && event.record.policyVerdict?.status
+      ? { preCallVerdict: event.record.policyVerdict.status }
+      : {}),
+    ...(event.type !== "tool.pre_call" && event.record.policyVerdict?.status
+      ? { postCallVerdict: event.record.policyVerdict.status }
+      : {}),
+    ...(typeof metadata.runtimeVerdict === "string"
+      ? { runtimeVerdict: metadata.runtimeVerdict }
+      : {}),
+    ...(typeof metadata.evidenceSatisfied === "boolean"
+      ? { evidenceSatisfied: metadata.evidenceSatisfied }
+      : {}),
+    ...(typeof metadata.sideEffectAlreadyOccurred === "boolean"
+      ? { sideEffectAlreadyOccurred: metadata.sideEffectAlreadyOccurred }
+      : {}),
+    ...(typeof metadata.preventability === "string"
+      ? { preventability: metadata.preventability }
+      : {}),
+  });
+  return parsed.success ? parsed.data : undefined;
 }
 
 function toolEventTypeForStatus(status: ToolCallRecord["status"]): ToolTraceEvent["type"] {
@@ -429,6 +506,100 @@ function compareToolEventSequence(
       `Expected exact tool event sequence ${formatToolEventSequence(expected.toolEventSequence)}, got ${formatToolEventSequence(actual)}. Trace event count mode: ${expected.traceEventCountMode}.`,
     );
   }
+}
+
+function compareStageSequence(
+  expected: ReplayExpectation,
+  actual: ReplayStageExpectation[],
+  failures: string[],
+): void {
+  if (expected.stageSequence === undefined) {
+    return;
+  }
+
+  if (expected.stageSequenceMode === "ordered-subset") {
+    compareStageOrderedSubset(expected.stageSequence, actual, failures);
+    return;
+  }
+
+  if (
+    expected.stageSequence.length !== actual.length ||
+    expected.stageSequence.some((stage, index) => !stageExpectationMatches(stage, actual[index]))
+  ) {
+    failures.push(
+      `Expected exact runtime stage sequence ${formatStageSequence(expected.stageSequence)}, got ${formatStageSequence(actual)}. Stage sequence mode: ${expected.stageSequenceMode}.`,
+    );
+  }
+}
+
+function compareStageOrderedSubset(
+  expected: ReplayStageExpectation[],
+  actual: ReplayStageExpectation[],
+  failures: string[],
+): void {
+  let cursor = 0;
+
+  for (const expectedStage of expected) {
+    let matchIndex = -1;
+    for (let index = cursor; index < actual.length; index += 1) {
+      if (stageExpectationMatches(expectedStage, actual[index])) {
+        matchIndex = index;
+        break;
+      }
+    }
+    if (matchIndex === -1) {
+      failures.push(
+        `Expected runtime stage ${formatStage(expectedStage)} after position ${cursor}, but it was not found in current runtime stages ${formatStageSequence(actual)}. Stage sequence mode: ordered-subset.`,
+      );
+      return;
+    }
+    cursor = matchIndex + 1;
+  }
+}
+
+function stageExpectationMatches(
+  expected: ReplayStageExpectation,
+  actual: ReplayStageExpectation | undefined,
+): boolean {
+  return (
+    actual !== undefined &&
+    expected.stage === actual.stage &&
+    expected.toolName === actual.toolName &&
+    optionalExpectationMatches(expected.preCallVerdict, actual.preCallVerdict) &&
+    optionalExpectationMatches(expected.postCallVerdict, actual.postCallVerdict) &&
+    optionalExpectationMatches(expected.runtimeVerdict, actual.runtimeVerdict) &&
+    optionalExpectationMatches(expected.evidenceSatisfied, actual.evidenceSatisfied) &&
+    optionalExpectationMatches(
+      expected.sideEffectAlreadyOccurred,
+      actual.sideEffectAlreadyOccurred,
+    ) &&
+    optionalExpectationMatches(expected.preventability, actual.preventability)
+  );
+}
+
+function optionalExpectationMatches<T>(expected: T | undefined, actual: T | undefined): boolean {
+  return expected === undefined || expected === actual;
+}
+
+function formatStageSequence(stages: ReplayStageExpectation[]): string {
+  if (stages.length === 0) {
+    return "[]";
+  }
+  return `[${stages.map(formatStage).join(", ")}]`;
+}
+
+function formatStage(stage: ReplayStageExpectation): string {
+  const pre = stage.preCallVerdict ? ` pre=${stage.preCallVerdict}` : "";
+  const post = stage.postCallVerdict ? ` post=${stage.postCallVerdict}` : "";
+  const runtime = stage.runtimeVerdict ? ` runtime=${stage.runtimeVerdict}` : "";
+  const evidence =
+    stage.evidenceSatisfied === undefined ? "" : ` evidenceSatisfied=${stage.evidenceSatisfied}`;
+  const occurred =
+    stage.sideEffectAlreadyOccurred === undefined
+      ? ""
+      : ` sideEffectAlreadyOccurred=${stage.sideEffectAlreadyOccurred}`;
+  const preventability = stage.preventability ? ` preventability=${stage.preventability}` : "";
+  return `${stage.stage}:${stage.toolName}${pre}${post}${runtime}${evidence}${occurred}${preventability}`;
 }
 
 function compareToolEventOrderedSubset(

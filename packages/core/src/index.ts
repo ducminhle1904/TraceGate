@@ -44,6 +44,8 @@ export type {
   ReplayFixtureInput,
   ReplayOutputKeysMode,
   ReplaySource,
+  ReplayStageExpectation,
+  ReplayStageSequenceMode,
   ReplayToolEventExpectation,
   ReplayToolEventSequenceMode,
   ReplayTraceEventCountMode,
@@ -59,6 +61,8 @@ export {
   ReplayExpectationSchema,
   ReplayFixtureSchema,
   ReplayOutputKeysModeSchema,
+  ReplayStageExpectationSchema,
+  ReplayStageSequenceModeSchema,
   ReplayToolEventExpectationSchema,
   ReplayToolEventSequenceModeSchema,
   ReplayTraceEventCountModeSchema,
@@ -86,12 +90,16 @@ export type {
 export { createHarness } from "./runtime/harness.js";
 export type {
   PolicyComparisonClassification,
+  PolicyComparisonGapCategory,
   PolicyComparisonResult,
+  PreCallDecision,
   RuntimeGate,
   RuntimeGateEnforcementOptions,
   RuntimeGateErrorContext,
   RuntimeGateMode,
   RuntimeGateOptions,
+  RuntimeGatePreventability,
+  RuntimeGateReconcileInput,
   RuntimeGateSummary,
 } from "./runtime/runtime-gate.js";
 export {
@@ -147,6 +155,7 @@ export type {
   SideEffect,
   ToolContract,
   ToolContractConfig,
+  ToolSideEffectClass,
   TraceGateInputSchema,
   TraceGateSafeParseResult,
 } from "./schema/tool-contract.js";
@@ -156,6 +165,7 @@ export {
   SideEffectSchema,
   ToolContractConfigSchema,
   ToolNameSchema,
+  ToolSideEffectClassSchema,
 } from "./schema/tool-contract.js";
 export type {
   LooseManifestContractAdapterConfig,
