@@ -15,7 +15,7 @@ export default defineReplayFixture({
     toolEventSequence: [
       {
         type: "tool.blocked",
-        toolName: "saveStrategyDraft",
+        toolName: "createInvoiceDraft",
         status: "blocked",
         policyVerdict: "block",
       },

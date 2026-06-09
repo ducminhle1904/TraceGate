@@ -25,24 +25,24 @@ interface ProbeResult {
 const here = dirname(fileURLToPath(import.meta.url));
 const tracesDir = join(here, "..", "traces");
 
-const strategyDraftContract = defineToolContract({
-  name: "saveStrategyDraft",
-  description: "Persist a strategy draft that may later be sent to a broker.",
+const invoiceDraftContract = defineToolContract({
+  name: "createInvoiceDraft",
+  description: "Persist an invoice draft that may later be sent to a customer.",
   riskTier: "high",
   requiresApproval: true,
   inputSchema: z.object({
-    strategyName: z.string().min(1),
-    accountId: z.string().min(1),
-    notionalUsd: z.number().positive(),
+    customerId: z.string().min(1),
+    invoiceNumber: z.string().min(1),
+    amountUsd: z.number().positive(),
   }),
   sideEffects: [{ kind: "database-write", external: false }],
-  requiredEvidence: ["strategy-review"],
+  requiredEvidence: ["invoice-review"],
 });
 
 const validInput = {
-  strategyName: "Breakout Guard",
-  accountId: "acct_demo",
-  notionalUsd: 1000,
+  customerId: "cust_demo",
+  invoiceNumber: "INV-1001",
+  amountUsd: 1000,
 };
 
 const traceGateBlocks: PolicyEvaluator = ({ contract }) => ({
@@ -125,9 +125,9 @@ async function executeProbe(
     onSummary(summary) {
       summaries.push(summary);
     },
-    enforcement: { toolNames: [strategyDraftContract.name] },
+    enforcement: { toolNames: [invoiceDraftContract.name] },
     ...(id === "validation-block"
-      ? { enforcement: { validationOnly: true, toolNames: [strategyDraftContract.name] } }
+      ? { enforcement: { validationOnly: true, toolNames: [invoiceDraftContract.name] } }
       : {}),
     ...(id === "approval-denied"
       ? {
@@ -142,14 +142,14 @@ async function executeProbe(
       : {}),
     ...(id === "shadow-would-block" ? { runtimeVerdictEvaluator: hostAllows } : {}),
   });
-  const saveStrategyDraft = gate.wrapTool(strategyDraftContract, async (input) => {
+  const createInvoiceDraft = gate.wrapTool(invoiceDraftContract, async (input) => {
     handlerCalls += 1;
-    return { draftId: `draft_${input.strategyName}` };
+    return { draftId: `draft_${input.invoiceNumber}` };
   });
 
   try {
-    await saveStrategyDraft(
-      id === "validation-block" ? { ...validInput, strategyName: "" } : validInput,
+    await createInvoiceDraft(
+      id === "validation-block" ? { ...validInput, invoiceNumber: "" } : validInput,
     );
   } catch {
     // Blocked probes are expected to throw before the handler executes.

@@ -6,6 +6,7 @@ import {
   type SideEffect,
   type ToolContract,
   type ToolContractConfig,
+  type ToolSideEffectClass,
   type TraceGateInputSchema,
 } from "./tool-contract.js";
 
@@ -33,6 +34,7 @@ export interface ToolContractAdapterConfig<
   description?: ToolManifestValue<TManifest, string | undefined>;
   requiresApproval?: ToolManifestValue<TManifest, boolean | undefined>;
   sideEffects?: ToolManifestValue<TManifest, SideEffect[] | undefined>;
+  sideEffectClass?: ToolManifestValue<TManifest, ToolSideEffectClass | undefined>;
   requiredEvidence?: ToolManifestValue<TManifest, string[] | undefined>;
   metadata?: ToolManifestValue<TManifest, JsonObject | undefined>;
 }
@@ -62,6 +64,7 @@ export interface ManifestContractAdapterConfig<
   getDescription?: (manifest: TManifest) => string | undefined;
   getApprovalRequirement?: (manifest: TManifest) => boolean | undefined;
   getSideEffects?: (manifest: TManifest) => SideEffect[] | undefined;
+  getSideEffectClass?: (manifest: TManifest) => ToolSideEffectClass | undefined;
   getRequiredEvidence?: (manifest: TManifest) => string[] | undefined;
   getMetadata?: (manifest: TManifest) => JsonObject | undefined;
 }
@@ -78,6 +81,7 @@ export interface LooseManifestContractAdapterConfig<TManifest> {
   getDescription?: (manifest: TManifest) => string | undefined;
   getApprovalRequirement?: (manifest: TManifest) => boolean | undefined;
   getSideEffects?: (manifest: TManifest) => SideEffect[] | undefined;
+  getSideEffectClass?: (manifest: TManifest) => ToolSideEffectClass | undefined;
   getRequiredEvidence?: (manifest: TManifest) => string[] | undefined;
   getMetadata?: (manifest: TManifest) => JsonObject | undefined;
 }
@@ -151,6 +155,7 @@ export function createManifestContractAdapter<
       ...(config.getDescription ? { description: config.getDescription } : {}),
       ...(config.getApprovalRequirement ? { requiresApproval: config.getApprovalRequirement } : {}),
       ...(config.getSideEffects ? { sideEffects: config.getSideEffects } : {}),
+      ...(config.getSideEffectClass ? { sideEffectClass: config.getSideEffectClass } : {}),
       ...(config.getRequiredEvidence ? { requiredEvidence: config.getRequiredEvidence } : {}),
       ...(config.getMetadata ? { metadata: config.getMetadata } : {}),
     });
@@ -204,6 +209,8 @@ export function defineToolContractFromManifest<
     requiresApproval:
       restOverrides.requiresApproval ?? resolveOptional(config.requiresApproval, manifest),
     sideEffects: restOverrides.sideEffects ?? resolveOptional(config.sideEffects, manifest),
+    sideEffectClass:
+      restOverrides.sideEffectClass ?? resolveOptional(config.sideEffectClass, manifest),
     requiredEvidence:
       restOverrides.requiredEvidence ?? resolveOptional(config.requiredEvidence, manifest),
     ...restOverrides,

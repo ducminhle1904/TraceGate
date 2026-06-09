@@ -75,12 +75,12 @@ const overridden = defineToolContractFromManifest(
   },
 );
 
-const nodeTraderLikeSchemas = {
-  readPosition: z.object({ symbol: z.string() }),
-  placeOrder: z.object({ symbol: z.string(), quantity: z.number().positive() }),
+const genericAppSchemas = {
+  readCustomer: z.object({ customerId: z.string() }),
+  createInvoiceDraft: z.object({ customerId: z.string(), amountUsd: z.number().positive() }),
 };
 
-type NodeTraderLikeRiskTier =
+type GenericAppRiskTier =
   | "read"
   | "draft"
   | "canvas_mutation"
@@ -88,34 +88,34 @@ type NodeTraderLikeRiskTier =
   | "trading_action"
   | "admin_action";
 
-interface NodeTraderLikeManifest {
-  name: keyof typeof nodeTraderLikeSchemas;
+interface GenericAppManifest {
+  name: keyof typeof genericAppSchemas;
   description: string;
   policy: {
-    riskTier: NodeTraderLikeRiskTier;
+    riskTier: GenericAppRiskTier;
     permission: string;
   };
   executionLocation: string;
 }
 
-const nodeTraderLikeRegistry: NodeTraderLikeManifest[] = [
+const genericAppRegistry: GenericAppManifest[] = [
   {
-    name: "readPosition",
-    description: "Read current position",
-    policy: { riskTier: "read", permission: "portfolio:read" },
+    name: "readCustomer",
+    description: "Read customer profile",
+    policy: { riskTier: "read", permission: "customers:read" },
     executionLocation: "server",
   },
   {
-    name: "placeOrder",
-    description: "Place a live order",
-    policy: { riskTier: "trading_action", permission: "orders:write" },
-    executionLocation: "broker",
+    name: "createInvoiceDraft",
+    description: "Create an invoice draft",
+    policy: { riskTier: "persisted_write", permission: "invoices:write" },
+    executionLocation: "server",
   },
 ];
 
-const nodeTraderLikeAdapter = createManifestContractAdapter({
-  registry: nodeTraderLikeRegistry,
-  schemas: nodeTraderLikeSchemas,
+const genericAppAdapter = createManifestContractAdapter({
+  registry: genericAppRegistry,
+  schemas: genericAppSchemas,
   getName: (manifest) => manifest.name,
   getDescription: (manifest) => manifest.description,
   getRiskTier: (manifest) => manifest.policy.riskTier,
@@ -136,7 +136,7 @@ const nodeTraderLikeAdapter = createManifestContractAdapter({
   }),
 });
 
-const placeOrderContract = nodeTraderLikeAdapter.getContract("placeOrder");
+const invoiceDraftContract = genericAppAdapter.getContract("createInvoiceDraft");
 
 assertEqual(mapRiskTier("broker_write", riskMapping), "high", "broker_write risk mapping");
 assertEqual(readOnlyContract?.requiresApproval, false, "read-only approval requirement");
@@ -157,11 +157,11 @@ assertJsonEqual(
   { internalRisk: "broker_write", owner: "risk" },
   "override metadata merge",
 );
-assertEqual(placeOrderContract.riskTier, "high", "NodeTrader-like trading risk mapping");
+assertEqual(invoiceDraftContract.riskTier, "medium", "generic persisted-write risk mapping");
 assertJsonEqual(
-  placeOrderContract.requiredEvidence,
-  ["orders:write"],
-  "NodeTrader-like required evidence",
+  invoiceDraftContract.requiredEvidence,
+  ["invoices:write"],
+  "generic app required evidence",
 );
 
 console.log(
@@ -181,11 +181,11 @@ console.log(
         requiredEvidence: overridden.requiredEvidence,
         metadata: overridden.metadata,
       },
-      nodeTraderLike: {
-        name: placeOrderContract.name,
-        riskTier: placeOrderContract.riskTier,
-        requiredEvidence: placeOrderContract.requiredEvidence,
-        metadata: placeOrderContract.metadata,
+      genericApp: {
+        name: invoiceDraftContract.name,
+        riskTier: invoiceDraftContract.riskTier,
+        requiredEvidence: invoiceDraftContract.requiredEvidence,
+        metadata: invoiceDraftContract.metadata,
       },
     },
     null,

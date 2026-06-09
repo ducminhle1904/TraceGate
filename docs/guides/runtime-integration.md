@@ -226,6 +226,11 @@ const gate = createRuntimeGate({
       handlerSkippedReason: summary.handlerSkippedReason,
       sideEffectPrevented: summary.sideEffectPrevented,
       finalVerdict: summary.finalVerdict?.status,
+      preCallVerdict: summary.preCallVerdict?.status,
+      postCallVerdict: summary.postCallVerdict?.status,
+      evidenceSatisfied: summary.evidenceSatisfied,
+      sideEffectAlreadyOccurred: summary.sideEffectAlreadyOccurred,
+      preventability: summary.preventability,
     });
   },
 });
@@ -235,6 +240,25 @@ Validation failures, policy blocks, missing review approval, and denied approval
 `handlerExecuted=false` and `sideEffectPrevented=true` when enforcement applies. In `shadow` mode,
 TraceGate never blocks the host handler; use `wouldHaveExecutedInShadow=false` to see that
 TraceGate would have prevented the side effect if enforcement were enabled.
+
+For client tools or host-dispatched tools, use a two-stage boundary:
+
+```ts
+const preflight = await gate.preflightToolCall(contract, input);
+
+const summary = await gate.reconcileToolCall(preflight, {
+  output: clientResult,
+  evidence: [invoiceSnapshot],
+  runtimeVerdict: "allow",
+  sideEffectAlreadyOccurred: true,
+});
+```
+
+`preflightToolCall()` is suitable for input validation and preliminary `allow | review | block`
+decisions before output exists. `reconcileToolCall()` is for post-call evidence such as
+`invoice_snapshot`. If the side effect already happened in the client or host runtime,
+TraceGate reports that truth with `sideEffectAlreadyOccurred=true` and does not claim
+`sideEffectPrevented=true`.
 
 Run the official side-effect readiness example to see validation block, approval denied, policy
 block, and shadow would-block probes with runtime replay fixtures:
@@ -268,10 +292,12 @@ tracegate replay-runtime fixtures/runtime-gate.ts --trace traces/current-runtime
 ```
 
 Default runtime-gate fixtures use `traceEventCountMode: "tool-boundary"` and
-`toolEventSequenceMode: "ordered-subset"`. This compares stable `tool.*` behavior without
+`toolEventSequenceMode: "ordered-subset"`. Multi-stage traces may also use
+`stageSequenceMode: "ordered-subset"`. This compares stable `tool.*` behavior without
 depending on `run.started` / `run.finished` or unrelated extra tool events in production JSONL.
 For approval-denied or runtime-block probes, assert the blocked boundary event and verdict rather
-than the full event count.
+than the full event count. For client tools, assert the `pre_call` and `post_call` stages that
+prove evidence was missing before the handler and satisfied after reconciliation.
 
 ## Error Adapter
 
@@ -356,7 +382,7 @@ A production host typically runs:
 3. TraceGate observation, shadow comparison, or targeted enforcement at the tool boundary.
 4. Host tool dispatch and app-owned audit logging.
 
-For a NodeTrader-like tool, the broker permission remains app-owned. TraceGate proves that the
+For a host application tool, domain permissions remain app-owned. TraceGate proves that the
 agent-facing tool contract has the expected risk tier, approval behavior, evidence requirements,
 redaction, trace shape, and replay expectations.
 

@@ -2,9 +2,15 @@ import { mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createTraceGateFunctionRegistry } from "@tracegate/adapters/plain-functions";
 import {
+  createTraceGateClientFunctionTool,
+  createTraceGateFunctionRegistry,
+} from "@tracegate/adapters/plain-functions";
+import {
+  createEvidenceRecord,
   createJsonlFileTraceSink,
+  createPolicyEvaluator,
+  defineToolContract,
   type PolicyEvaluator,
   type RuntimeGateSummary,
 } from "@tracegate/core";
@@ -99,6 +105,39 @@ await validationOnlyTools.draftOrder
   .execute({ symbol: "", quantity: 1 } as never)
   .catch(() => undefined);
 
+const clientMutationContract = defineToolContract({
+  name: "clientSaveDraft",
+  description: "Client-side draft save with post-call evidence.",
+  riskTier: "medium",
+  inputSchema: z.object({ draftId: z.string().min(1) }),
+  sideEffectClass: "client_mutation",
+  requiredEvidence: ["strategy_snapshot"],
+});
+const clientTool = createTraceGateClientFunctionTool(clientMutationContract, {
+  traceSink,
+  onSummary: (summary) => {
+    summaries.push(summary);
+  },
+  runtimeGateOptions: {
+    mode: "observe",
+    policyEvaluator: createPolicyEvaluator({}),
+  },
+});
+const preflight = await clientTool.preflight({ draftId: "draft_123" });
+await clientTool.reconcile(preflight, {
+  output: { saved: true },
+  evidence: [
+    createEvidenceRecord({
+      id: "strategy_snapshot:draft_123",
+      type: "tool-output",
+      source: "client",
+      content: { kind: "strategy_snapshot", draftId: "draft_123" },
+    }),
+  ],
+  runtimeVerdict: "allow",
+  sideEffectAlreadyOccurred: true,
+});
+
 console.log(
   JSON.stringify(
     {
@@ -108,6 +147,16 @@ console.log(
         toolName: summary.toolName,
         riskTier: summary.riskTier,
         finalVerdict: summary.finalVerdict?.status,
+        preCallVerdict: summary.preCallVerdict?.status,
+        postCallVerdict: summary.postCallVerdict?.status,
+        runtimeVerdict:
+          typeof summary.runtimeVerdict === "string"
+            ? summary.runtimeVerdict
+            : summary.runtimeVerdict?.status,
+        evidenceSatisfied: summary.evidenceSatisfied,
+        sideEffectAlreadyOccurred: summary.sideEffectAlreadyOccurred,
+        enforceablePreCall: summary.enforceablePreCall,
+        preventability: summary.preventability,
         handlerExecuted: summary.handlerExecuted,
         sideEffectPrevented: summary.sideEffectPrevented,
         shadowComparison: summary.shadowComparison?.classifications,

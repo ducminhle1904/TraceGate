@@ -6,6 +6,7 @@ import {
 import {
   createHarness,
   createMemoryTraceSink,
+  createPolicyEvaluator,
   createRuntimeGate,
   defineToolContract,
   type RuntimeGateSummary,
@@ -22,7 +23,10 @@ import {
   createOpenTelemetryTraceSink,
   mapTraceEventToOpenTelemetryAttributes,
 } from "../src/opentelemetry.js";
-import { createTraceGateFunctionRegistry } from "../src/plain-functions.js";
+import {
+  createTraceGateClientFunctionTool,
+  createTraceGateFunctionRegistry,
+} from "../src/plain-functions.js";
 import { createTraceGateVercelAITool } from "../src/vercel-ai-sdk.js";
 
 const inputSchema = z.object({ value: z.string() });
@@ -96,6 +100,65 @@ describe("framework adapters", () => {
 
     expect(traceSink.events.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
     expect(new Set(traceSink.events.map((event) => event.runId)).size).toBe(1);
+  });
+
+  it("supports client function preflight and post-call reconciliation", async () => {
+    const traceSink = createMemoryTraceSink();
+    const summaries: RuntimeGateSummary[] = [];
+    const contract = defineToolContract({
+      name: "client_mutation",
+      riskTier: "medium",
+      inputSchema,
+      sideEffectClass: "client_mutation",
+      requiredEvidence: ["client_result"],
+    });
+    const tool = createTraceGateClientFunctionTool(contract, {
+      traceSink,
+      onSummary(summary) {
+        summaries.push(summary);
+      },
+      runtimeGateOptions: {
+        mode: "observe",
+        policyEvaluator: createPolicyEvaluator({}),
+      },
+    });
+
+    const preflight = await tool.preflight({ value: "draft" });
+    const reconciled = await tool.reconcile(preflight, {
+      output: { ok: true },
+      evidence: [
+        {
+          id: "client_result:1",
+          type: "tool-output",
+          timestamp: "2026-06-07T00:00:00.000Z",
+          redacted: false,
+          source: "client",
+          content: { client_result: true },
+        },
+      ],
+      runtimeVerdict: "allow",
+      sideEffectAlreadyOccurred: true,
+    });
+
+    expect(preflight).toMatchObject({
+      decision: "review",
+      evidenceSatisfied: false,
+    });
+    expect(reconciled).toMatchObject({
+      postCallVerdict: { status: "allow" },
+      sideEffectAlreadyOccurred: true,
+      sideEffectPrevented: false,
+    });
+    expect(traceSink.events.map((event) => event.type)).toEqual([
+      "tool.pre_call",
+      "evidence.recorded",
+      "tool.post_call",
+      "tool.reconciled",
+    ]);
+    expect(summaries.at(-1)).toMatchObject({
+      toolName: "client_mutation",
+      handlerExecuted: true,
+    });
   });
 
   it("rejects conflicting runtime-gate sink callbacks in adapter options", () => {

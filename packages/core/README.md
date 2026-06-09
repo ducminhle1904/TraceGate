@@ -7,6 +7,8 @@ TraceGate core includes framework-neutral contracts, runtime wrapping, configura
 Use `createHarness()` and `wrapTool()` to validate tool input, evaluate policy, redact traces, record evidence, and emit ordered trace events.
 Use `createRuntimeGate()` when you need to observe, shadow, or enforce TraceGate behavior around
 an existing production tool dispatcher before migrating to a full harness integration.
+For client or host-dispatched tools, use `preflightToolCall()` before the host handler and
+`reconcileToolCall()` after output/evidence is available.
 
 ## Install
 
@@ -58,6 +60,7 @@ imports from `@tracegate/core`.
 - manifest and registry contract adapters
 - harness runtime and trace sinks
 - runtime gate rollout helpers
+- multi-stage pre-call and post-call evidence reconciliation
 - policy and approval helpers
 - structured policy diagnostics
 - redaction and placeholder-aware secret-leak detection

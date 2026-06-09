@@ -56,6 +56,13 @@ runtime outcome. A denied approval is expected to end as `block`, not `review`.
 | `wouldHaveExecutedInShadow` | In `shadow` mode, whether TraceGate would have allowed execution if enforcement had been enabled. |
 | `enforcementApplied` | Whether the current tool matched the configured enforcement scope. |
 | `validationOnly` | Whether enforcement only blocks invalid input and leaves policy verdicts observational. |
+| `preCallVerdict` | The policy verdict before a host or client handler runs. |
+| `postCallVerdict` | The policy verdict after post-call evidence is submitted. |
+| `runtimeVerdict` | The host runtime's decision, when the host reports one. |
+| `evidenceSatisfied` | Whether required evidence was satisfied at the current stage. |
+| `sideEffectAlreadyOccurred` | Whether the side effect has already happened outside TraceGate's direct control. |
+| `enforceablePreCall` | Whether TraceGate could have blocked this call before the handler. |
+| `preventability` | `prevented`, `preventable_pre_call`, `not_preventable_at_pre_call`, `requires_post_call_evidence`, or `observational`. |
 
 Mode semantics:
 
@@ -69,6 +76,53 @@ Mode semantics:
 Use `summarizeSideEffectSafety(summaryOrEvent)` to derive the same compact evidence from a runtime
 summary, tool trace event, or tool call record. This is reporting evidence only; app authorization,
 IAM, and business policy stay app-owned.
+
+## Multi-Stage Runtime Gate
+
+Server tools use the direct wrapper path:
+
+```ts
+const guarded = gate.wrapTool(contract, execute);
+```
+
+Client or host-dispatched tools can use the lower-level flow:
+
+```ts
+const preflight = await gate.preflightToolCall(contract, input);
+
+// The host may now dispatch a client handler or framework-owned tool call.
+const summary = await gate.reconcileToolCall(preflight, {
+  output: { saved: true },
+  evidence: [invoiceSnapshotEvidence],
+  runtimeVerdict: "allow",
+  sideEffectAlreadyOccurred: true,
+});
+```
+
+`preflightToolCall()` validates input and evaluates the preliminary policy without requiring tool
+output. It emits `tool.pre_call`. This is the right fit for read and draft tools, and for
+pre-call enforcement before side effects.
+
+`reconcileToolCall()` records host output, evidence, and runtime verdict after execution. It emits
+submitted `evidence.recorded` events, then `tool.post_call` and `tool.reconciled`. If a client mutation or persisted write already happened,
+TraceGate reports `sideEffectAlreadyOccurred=true` and never claims `sideEffectPrevented=true`.
+
+Use `sideEffectClass` on contracts to make preventability explicit:
+
+```ts
+defineToolContract({
+  name: "createInvoiceDraft",
+  riskTier: "medium",
+  inputSchema,
+  sideEffectClass: "persisted_write",
+  requiredEvidence: ["invoice_snapshot"],
+});
+```
+
+Supported classes are `read`, `draft`, `client_mutation`, `persisted_write`, and
+`external_side_effect`. If `persisted_write` or `external_side_effect` requires evidence that only
+exists after the handler runs, TraceGate reports `requires_post_call_evidence` or
+`not_preventable_at_pre_call`. That is product truth, not a TraceGate failure.
 
 ## Error Behavior
 

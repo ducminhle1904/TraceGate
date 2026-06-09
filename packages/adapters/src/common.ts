@@ -89,17 +89,27 @@ export function resolveRuntimeGate(options: TraceGateRuntimeAdapterOptions = {})
   return createRuntimeGate(runtimeGateOptions);
 }
 
-export function isToolTraceEvent(
-  event: TraceEvent,
-): event is Extract<
+export function isToolTraceEvent(event: TraceEvent): event is Extract<
   TraceEvent,
-  { type: "tool.started" | "tool.succeeded" | "tool.failed" | "tool.blocked" }
+  {
+    type:
+      | "tool.started"
+      | "tool.succeeded"
+      | "tool.failed"
+      | "tool.blocked"
+      | "tool.pre_call"
+      | "tool.post_call"
+      | "tool.reconciled";
+  }
 > {
   return (
     event.type === "tool.started" ||
     event.type === "tool.succeeded" ||
     event.type === "tool.failed" ||
-    event.type === "tool.blocked"
+    event.type === "tool.blocked" ||
+    event.type === "tool.pre_call" ||
+    event.type === "tool.post_call" ||
+    event.type === "tool.reconciled"
   );
 }
 

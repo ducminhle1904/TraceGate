@@ -3,9 +3,13 @@ import {
   type InferToolInput,
   type InferToolOutput,
   type JsonObject,
+  type PreCallDecision,
   type RiskTierMapping,
+  type RuntimeGateReconcileInput,
+  type RuntimeGateSummary,
   type SideEffect,
   type ToolContract,
+  type ToolSideEffectClass,
   type TraceGateInputSchema,
 } from "@tracegate/core";
 
@@ -22,6 +26,17 @@ export interface TraceGateFunctionTool<TInputSchema extends TraceGateInputSchema
   execute(input: InferToolInput<TInputSchema>): Promise<TResult | unknown>;
 }
 
+export interface TraceGateClientFunctionTool<TInputSchema extends TraceGateInputSchema> {
+  name: string;
+  description: string;
+  contract: ToolContract<TInputSchema>;
+  preflight(input: InferToolInput<TInputSchema>): Promise<PreCallDecision>;
+  reconcile(
+    preflightOrId: PreCallDecision | string,
+    result?: RuntimeGateReconcileInput,
+  ): Promise<RuntimeGateSummary>;
+}
+
 export type TraceGateFunctionToolOptions = TraceGateRuntimeAdapterOptions;
 
 export interface TraceGateFunctionRegistryEntry<
@@ -34,6 +49,7 @@ export interface TraceGateFunctionRegistryEntry<
   riskTier: unknown;
   requiresApproval?: boolean;
   sideEffects?: SideEffect[];
+  sideEffectClass?: ToolSideEffectClass;
   requiredEvidence?: string[];
   metadata?: JsonObject;
   execute(input: InferToolOutput<TInputSchema>): Promise<TResult> | TResult;
@@ -48,6 +64,7 @@ export interface TraceGateFunctionRegistryConfig<TEntry> {
   getRiskTier?: (entry: TEntry, key: string) => unknown;
   getApprovalRequirement?: (entry: TEntry, key: string) => boolean | undefined;
   getSideEffects?: (entry: TEntry, key: string) => SideEffect[] | undefined;
+  getSideEffectClass?: (entry: TEntry, key: string) => ToolSideEffectClass | undefined;
   getRequiredEvidence?: (entry: TEntry, key: string) => string[] | undefined;
   getMetadata?: (entry: TEntry, key: string) => JsonObject | undefined;
   getExecute?: (
@@ -69,6 +86,25 @@ export function createTraceGateFunctionTool<TInputSchema extends TraceGateInputS
     description: resolveDescription(options.description, contract.description, contract.name),
     contract,
     execute: wrapped,
+  };
+}
+
+export function createTraceGateClientFunctionTool<TInputSchema extends TraceGateInputSchema>(
+  contract: ToolContract<TInputSchema>,
+  options: TraceGateFunctionToolOptions = {},
+): TraceGateClientFunctionTool<TInputSchema> {
+  const runtimeGate = resolveRuntimeGate(options);
+
+  return {
+    name: contract.name,
+    description: resolveDescription(options.description, contract.description, contract.name),
+    contract,
+    preflight(input) {
+      return runtimeGate.preflightToolCall(contract, input);
+    },
+    reconcile(preflightOrId, result) {
+      return runtimeGate.reconcileToolCall(preflightOrId, result);
+    },
   };
 }
 
@@ -106,6 +142,8 @@ export function createTraceGateFunctionRegistry<
         config.getApprovalRequirement?.(manifest, key) ?? manifest.requiresApproval,
       sideEffects: (manifest: TEntry) =>
         config.getSideEffects?.(manifest, key) ?? manifest.sideEffects,
+      sideEffectClass: (manifest: TEntry) =>
+        config.getSideEffectClass?.(manifest, key) ?? manifest.sideEffectClass,
       requiredEvidence: (manifest: TEntry) =>
         config.getRequiredEvidence?.(manifest, key) ?? manifest.requiredEvidence,
       metadata: (manifest: TEntry) => config.getMetadata?.(manifest, key) ?? manifest.metadata,

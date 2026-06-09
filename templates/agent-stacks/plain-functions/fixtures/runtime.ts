@@ -28,6 +28,7 @@ export default defineReplayFixture({
       { type: "tool.blocked", toolName: "draftOrder", status: "blocked" },
     ],
     toolEventSequenceMode: "ordered-subset",
+    evidence: [{ id: "strategy_snapshot:draft_123", type: "tool-output" }],
     traceEventCount: 5,
     traceEventCountMode: "tool-boundary",
   },

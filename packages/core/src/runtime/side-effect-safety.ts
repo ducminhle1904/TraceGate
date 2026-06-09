@@ -1,7 +1,7 @@
 import type { PolicyDiagnostic, PolicyVerdict, PolicyVerdictStatus } from "../policy/verdict.js";
 import type { RiskTier } from "../schema/tool-contract.js";
 import type { ToolCallRecord } from "../schema/trace.js";
-import type { RuntimeGateSummary } from "./runtime-gate.js";
+import type { RuntimeGatePreventability, RuntimeGateSummary } from "./runtime-gate.js";
 import type { ToolTraceEvent } from "./trace-sink.js";
 
 export type HandlerSkippedReason =
@@ -18,6 +18,10 @@ export interface SideEffectSafetySummary {
   handlerSkippedReason?: HandlerSkippedReason | undefined;
   sideEffectPrevented: boolean;
   wouldHaveExecutedInShadow?: boolean | undefined;
+  evidenceSatisfied?: boolean | undefined;
+  sideEffectAlreadyOccurred?: boolean | undefined;
+  enforceablePreCall?: boolean | undefined;
+  preventability?: RuntimeGatePreventability | undefined;
   toolName?: string | undefined;
   riskTier?: RiskTier | undefined;
   finalVerdict?: PolicyVerdictStatus | undefined;
@@ -33,6 +37,16 @@ export function summarizeSideEffectSafety(input: unknown): SideEffectSafetySumma
       ...(input.wouldHaveExecutedInShadow !== undefined
         ? { wouldHaveExecutedInShadow: input.wouldHaveExecutedInShadow }
         : {}),
+      ...(input.evidenceSatisfied !== undefined
+        ? { evidenceSatisfied: input.evidenceSatisfied }
+        : {}),
+      ...(input.sideEffectAlreadyOccurred !== undefined
+        ? { sideEffectAlreadyOccurred: input.sideEffectAlreadyOccurred }
+        : {}),
+      ...(input.enforceablePreCall !== undefined
+        ? { enforceablePreCall: input.enforceablePreCall }
+        : {}),
+      ...(input.preventability !== undefined ? { preventability: input.preventability } : {}),
       toolName: input.toolName,
       riskTier: input.riskTier,
       finalVerdict: input.finalVerdict?.status,

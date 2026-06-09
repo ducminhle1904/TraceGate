@@ -14,13 +14,18 @@ pnpm add @tracegate/adapters
 ## Framework Adapters
 
 ```ts
-import { createTraceGateFunctionRegistry } from "@tracegate/adapters/plain-functions";
+import {
+  createTraceGateClientFunctionTool,
+  createTraceGateFunctionRegistry,
+} from "@tracegate/adapters/plain-functions";
 import { createTraceGateOpenAIAgentsTool } from "@tracegate/adapters/openai-agents";
 import { createTraceGateLangGraphTool } from "@tracegate/adapters/langgraph";
 import { createTraceGateVercelAITool } from "@tracegate/adapters/vercel-ai-sdk";
 ```
 
 - Plain functions: wraps an existing in-process tool registry with `createRuntimeGate()`.
+  `createTraceGateClientFunctionTool()` supports pre-call and post-call evidence flows for
+  client/host-dispatched tools.
 - OpenAI Agents SDK: creates a real function tool with the contract name, description, and
   Zod input schema.
 - LangGraph JS: creates a LangChain/LangGraph-compatible structured tool for ToolNode-style

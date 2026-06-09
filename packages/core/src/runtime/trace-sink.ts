@@ -21,7 +21,14 @@ export interface RunTraceEvent {
 
 export interface ToolTraceEvent {
   sequence: number;
-  type: "tool.started" | "tool.succeeded" | "tool.failed" | "tool.blocked";
+  type:
+    | "tool.started"
+    | "tool.succeeded"
+    | "tool.failed"
+    | "tool.blocked"
+    | "tool.pre_call"
+    | "tool.post_call"
+    | "tool.reconciled";
   timestamp: string;
   runId: string;
   record: ToolCallRecord;
@@ -50,7 +57,15 @@ export const RunTraceEventSchema = z
 export const ToolTraceEventSchema = z
   .object({
     sequence: z.number().int().nonnegative(),
-    type: z.enum(["tool.started", "tool.succeeded", "tool.failed", "tool.blocked"]),
+    type: z.enum([
+      "tool.started",
+      "tool.succeeded",
+      "tool.failed",
+      "tool.blocked",
+      "tool.pre_call",
+      "tool.post_call",
+      "tool.reconciled",
+    ]),
     timestamp: z.string().datetime(),
     runId: z.string().min(1),
     record: ToolCallRecordSchema,

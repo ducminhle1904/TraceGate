@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+- Added multi-stage runtime gate APIs for client/host-dispatched tools: `preflightToolCall()` and `reconcileToolCall()`.
+- Added `sideEffectClass` contract semantics, pre/post-call verdict summary fields, evidence satisfaction, preventability, and side-effect-already-occurred reporting.
+- Added portable shadow mismatch classifications for evidence gaps, approval gaps, TraceGate blocks, and host-runtime blocks.
+- Added runtime replay `stageSequence` expectations for multi-stage JSONL traces.
+- Added plain-function client-flow adapter support and updated docs/templates for server tools, client tools, human approval, and post-call evidence reconciliation.
+
 ## 0.5.3
 
 - Added a side-effect readiness example with validation-block, approval-denied, policy-block, and shadow would-block runtime replay probes.
